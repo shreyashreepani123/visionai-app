@@ -12,7 +12,7 @@ import gdown
 
 # ------------------ CONFIG ------------------
 # 1) Put your public Google Drive file ID here
-FILE_ID = "YOUR_DRIVE_FILE_ID"  # <- e.g. '1Bd-iZ8b_37vxXCWRNwk-CtxBvXgG97V3'
+FILE_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"  # <- e.g. '1Bd-iZ8b_37vxXCWRNwk-CtxBvXgG97V3'
 CHECKPOINT_PATH = "checkpoint.pth"
 
 # 2) Force CPU on Streamlit Cloud (no GPU available)
@@ -125,6 +125,7 @@ if uploaded_file:
         image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
 else:
     st.info("👉 Upload a JPG/PNG image to get started.")
+
 
 
 
