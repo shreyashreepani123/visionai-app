@@ -1,11 +1,11 @@
 import os
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image
 import streamlit as st
-import gdown
+import requests
+
+import torchvision.models.segmentation as models
 
 # ---------------- CONFIG ----------------
 # 1) Model download from GitHub Release
@@ -24,35 +24,20 @@ def ensure_checkpoint():
     if os.path.exists(CHECKPOINT_PATH):
         return
     st.write("📥 Downloading model weights from GitHub Releases...")
-    gdown.download(MODEL_URL, CHECKPOINT_PATH, quiet=False)
+    r = requests.get(MODEL_URL, allow_redirects=True)
+    open(CHECKPOINT_PATH, 'wb').write(r.content)
     st.write("✅ Download complete.")
-
-
-# ---------------- MODEL ----------------
-class SimpleUNet(nn.Module):
-    def __init__(self):
-        super(SimpleUNet, self).__init__()
-        self.enc1 = nn.Conv2d(3, 64, 3, padding=1)
-        self.enc2 = nn.Conv2d(64, 128, 3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.dec1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.out = nn.Conv2d(64, 1, 1)
-
-    def forward(self, x):
-        x1 = F.relu(self.enc1(x))
-        x2 = self.pool(x1)
-        x2 = F.relu(self.enc2(x2))
-        x3 = self.dec1(x2)
-        x = torch.sigmoid(self.out(x3))
-        return x
 
 
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
     ensure_checkpoint()
-    model = SimpleUNet().to(DEVICE)
-    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE)["model_state"])
+    # Use DeepLabV3 with ResNet50 backbone (matches backbone keys in checkpoint)
+    model = models.deeplabv3_resnet50(weights=None, num_classes=21)  # change num_classes if needed
+    checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
+    model.load_state_dict(checkpoint["model_state"])
+    model = model.to(DEVICE)
     model.eval()
     return model
 
@@ -68,7 +53,7 @@ transform = T.Compose([
 st.set_page_config(page_title="VisionAI: Image Segmentation Demo", layout="centered")
 
 st.title("🔍 VisionAI Segmentation Demo")
-st.write("Upload an image to see binary and color masking results. Model runs on CPU.")
+st.write("Upload an image to see segmentation results. Model runs on CPU.")
 
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
@@ -82,14 +67,12 @@ if uploaded_file is not None:
     img_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        output = model(img_tensor)[0][0].cpu()
+        output = model(img_tensor)["out"][0]   # DeepLab outputs dict with "out"
 
-    # Convert to binary mask
-    mask = (output > 0.5).float()
+    # Take argmax across classes for segmentation map
+    mask = output.argmax(0).cpu().numpy()
 
-    # Show results
-    st.image(mask.numpy(), caption="Predicted Mask", use_column_width=True)
-
+    st.image(mask, caption="Predicted Segmentation Mask", use_column_width=True)
 
 
 
