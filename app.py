@@ -1,125 +1,186 @@
 import os
-import torch
-import torchvision.transforms as T
-from PIL import Image
-import streamlit as st
-import requests
+from io import BytesIO
+
 import numpy as np
-import torchvision.models.segmentation as models
-import io
+import torch
+import torch.nn.functional as F
+import torchvision.transforms as T
+import torchvision.models.segmentation as segmodels
+from PIL import Image
+import requests
+import streamlit as st
+import cv2  # opencv-python-headless
 
 # ---------------- CONFIG ----------------
-CHECKPOINT_PATH = "checkpoint.pth"
+# 1) Where your released checkpoint lives (GitHub Releases asset)
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
+CHECKPOINT_PATH = "checkpoint.pth"
+
+# 2) Model must match the checkpoint's head size (your file has 91 classes)
+NUM_CLASSES = 91
+BACKGROUND_CLASS = 0  # usually 0
+
+# 3) Streamlit Cloud is CPU-only
 DEVICE = torch.device("cpu")
+
+# 4) Resize used for inference (network input); results are upsampled back to original
 IMAGE_SIZE = 256
 
 
-# ---------------- UTIL: Download checkpoint ----------------
+# ---------------- UTILS ----------------
 def ensure_checkpoint():
+    """Download checkpoint once from GitHub Releases."""
     if os.path.exists(CHECKPOINT_PATH):
         return
-    st.write("📥 Downloading model weights from GitHub Releases...")
-    r = requests.get(MODEL_URL, allow_redirects=True)
-    open(CHECKPOINT_PATH, 'wb').write(r.content)
-    st.write("✅ Download complete.")
+    st.info("📥 Downloading model weights from GitHub Releases…")
+    r = requests.get(MODEL_URL, allow_redirects=True, timeout=300)
+    r.raise_for_status()
+    with open(CHECKPOINT_PATH, "wb") as f:
+        f.write(r.content)
+    st.success("✅ Download complete.")
 
 
-# ---------------- LOAD MODEL ----------------
+def _strip_module_prefix(state_dict):
+    """Remove 'module.' prefix if present (DataParallel checkpoints)."""
+    new_sd = {}
+    for k, v in state_dict.items():
+        if k.startswith("module."):
+            new_sd[k[len("module."):]] = v
+        else:
+            new_sd[k] = v
+    return new_sd
+
+
 @st.cache_resource
 def load_model():
+    """Create DeepLabV3-ResNet50 with correct head and load your checkpoint."""
     ensure_checkpoint()
-    checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
 
-    # Handle different formats
-    if "model_state" in checkpoint:
-        state_dict = checkpoint["model_state"]
-    elif "state_dict" in checkpoint:
-        state_dict = checkpoint["state_dict"]
+    # Build model with correct number of classes
+    model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
+
+    # Load checkpoint (supports {"model_state": ...} or direct state dict)
+    ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
+    if isinstance(ckpt, dict) and "model_state" in ckpt:
+        state_dict = ckpt["model_state"]
     else:
-        state_dict = checkpoint
+        state_dict = ckpt
 
-    # Match num_classes = 91 (your checkpoint was trained with 91 classes!)
-    model = models.deeplabv3_resnet50(weights=None, num_classes=91)
+    state_dict = _strip_module_prefix(state_dict)
 
-    # Load checkpoint with strict=False to ignore mismatches
+    # If you ever just want to partially load, set strict=False,
+    # but for best accuracy we load strictly so the head is used.
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    st.write("⚠️ Missing keys:", missing)
-    st.write("⚠️ Unexpected keys:", unexpected)
+    # If classifier keys were missing, strict=True would throw. We still report info:
+    if len(missing) + len(unexpected) > 0:
+        st.warning(
+            "Note: some keys did not load strictly. "
+            f"Missing: {len(missing)} | Unexpected: {len(unexpected)}"
+        )
 
-    model = model.to(DEVICE)
-    model.eval()
+    model.to(DEVICE).eval()
     return model
 
 
-# ---------------- IMAGE TRANSFORMS ----------------
+# ImageNet normalization (typical for torchvision backbones)
 transform = T.Compose([
-    T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    T.Resize((IMAGE_SIZE, IMAGE_SIZE), interpolation=T.InterpolationMode.BILINEAR),
     T.ToTensor(),
+    T.Normalize(mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)),
 ])
 
 
+def tensor_to_pil_uint8(arr):
+    """arr: (H,W) or (H,W,3) np.uint8 -> PNG bytes + PIL image."""
+    if arr.ndim == 2:
+        pil = Image.fromarray(arr, mode="L")
+    else:
+        pil = Image.fromarray(arr, mode="RGB")
+    bio = BytesIO()
+    pil.save(bio, format="PNG")
+    return bio.getvalue(), pil
+
+
+def make_color_mask(original_rgb, binary_mask):
+    """
+    Keep original colors where mask==1; black elsewhere.
+    original_rgb: np.uint8 (H,W,3)
+    binary_mask : np.uint8 (H,W) with values 0 or 255
+    """
+    m = (binary_mask > 0)[..., None]  # (H,W,1) boolean
+    color = np.where(m, original_rgb, 0)
+    return color.astype(np.uint8)
+
+
+def postprocess_to_original(logits, orig_h, orig_w):
+    """Upsample logits to original size and get predicted class map."""
+    # logits: (1, C, h, w) -> upsample to orig (H,W)
+    up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+    # per-pixel class prediction
+    pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)  # (H,W)
+    return pred
+
+
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI: Image Segmentation Demo", layout="centered")
+st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
 
 st.title("🔍 VisionAI Segmentation Demo")
-st.write("Upload an image to see segmentation results. Model runs on CPU.")
+st.caption(
+    "Binary mask (white object on black) and color masking (image colors on black background). "
+    "Runs on CPU. Set `NUM_CLASSES` to your training setting (here 91) to match your checkpoint."
+)
 
-uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+if uploaded is not None:
+    # Load image
+    image_pil = Image.open(uploaded).convert("RGB")
+    orig_w, orig_h = image_pil.size
+    image_np = np.array(image_pil)  # (H,W,3), uint8
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
-
+    # Model
     model = load_model()
 
     # Preprocess
-    img_tensor = transform(image).unsqueeze(0).to(DEVICE)
-
     with torch.no_grad():
-        output = model(img_tensor)["out"][0]
+        inp = transform(image_pil).unsqueeze(0).to(DEVICE)  # (1,3,H,W)
+        out = model(inp)
+        # torchvision segmentation returns dict {"out": logits, ...}
+        logits = out["out"] if isinstance(out, dict) else out  # (1,C,h,w)
 
-    # Segmentation prediction
-    mask = output.argmax(0).cpu().numpy()
+        # Upsample and get class map
+        pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Resize masks back to original size
-    mask_img = Image.fromarray(mask.astype(np.uint8)).resize(image.size, resample=Image.NEAREST)
-    mask = np.array(mask_img)
+    # Binary mask (object = any class != background)
+    binary = (pred_classes != BACKGROUND_CLASS).astype(np.uint8) * 255  # (H,W) uint8 in {0,255}
 
-    # --- Binary mask (object=white, background=black) ---
-    binary_mask = (mask > 0).astype(np.uint8) * 255
+    # (Optional) small clean-up (opening/closing) for nicer edges
+    kernel = np.ones((3, 3), np.uint8)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-    # --- Colored masking (object keeps real colors, background black) ---
-    img_np = np.array(image)
-    color_mask = img_np.copy()
-    color_mask[mask == 0] = [0, 0, 0]
+    # Color mask: keep image where mask==1 else black
+    color_mask_img = make_color_mask(image_np, binary)
 
-    # Show results
-    st.image(binary_mask, caption="Binary Segmentation (White=Object, Black=Background)", use_column_width=True)
-    st.image(color_mask, caption="Colored Masking (Object in Original Colors, Background Black)", use_column_width=True)
+    # Prepare downloads
+    binary_bytes, binary_pil = tensor_to_pil_uint8(binary)
+    color_bytes, color_pil = tensor_to_pil_uint8(color_mask_img)
 
-    # ---------------- DOWNLOAD BUTTONS ----------------
-    # Binary mask download
-    bin_img = Image.fromarray(binary_mask)
-    buf_bin = io.BytesIO()
-    bin_img.save(buf_bin, format="PNG")
+    # Show & download
+    st.subheader("Binary Segmentation (White=Object, Black=Background)")
+    st.image(binary_pil, use_column_width=True)
     st.download_button(
-        label="⬇️ Download Binary Mask",
-        data=buf_bin.getvalue(),
-        file_name="binary_mask.png",
-        mime="image/png"
+        "⬇️ Download Binary Mask (PNG)", data=binary_bytes,
+        file_name="mask_binary.png", mime="image/png"
     )
 
-    # Color mask download
-    col_img = Image.fromarray(color_mask)
-    buf_col = io.BytesIO()
-    col_img.save(buf_col, format="PNG")
+    st.subheader("Color Masking (Original Colors on Black Background)")
+    st.image(color_pil, use_column_width=True)
     st.download_button(
-        label="⬇️ Download Colored Mask",
-        data=buf_col.getvalue(),
-        file_name="colored_mask.png",
-        mime="image/png"
+        "⬇️ Download Color Mask (PNG)", data=color_bytes,
+        file_name="mask_color.png", mime="image/png"
     )
+
 
 
 
