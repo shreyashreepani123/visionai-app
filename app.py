@@ -13,9 +13,12 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # Must match training
+NUM_CLASSES = 91   # COCO dataset
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
+
+# COCO class IDs → "person" = 15
+TARGET_CLASS = 15
 
 
 # ---------------- DOWNLOAD MODEL ----------------
@@ -85,30 +88,27 @@ if uploaded is not None:
         logits = out["out"]
         pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Detect background index = most common class
-    background_index = int(np.bincount(pred_classes.flatten()).argmax())
-
-    # ---------------- BINARY MASK ----------------
-    binary = (pred_classes != background_index).astype(np.uint8) * 255
-    binary = clean_mask(binary)
+    # ---------------- PERSON-ONLY MASK ----------------
+    person_mask = (pred_classes == TARGET_CLASS).astype(np.uint8) * 255
+    person_mask = clean_mask(person_mask)
 
     # ---------------- COLOR MASK ----------------
     color_mask = np.zeros_like(image_np)
-    mask_area = pred_classes != background_index
+    mask_area = pred_classes == TARGET_CLASS
     color_mask[mask_area] = image_np[mask_area]
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask")
-    st.image(binary, use_column_width=True)
+    st.subheader("Binary Mask (Persons only)")
+    st.image(person_mask, use_column_width=True)
 
     st.download_button(
         "⬇️ Download Binary Mask (PNG)",
-        data=BytesIO(cv2.imencode(".png", binary)[1].tobytes()),
+        data=BytesIO(cv2.imencode(".png", person_mask)[1].tobytes()),
         file_name="binary_mask.png",
         mime="image/png",
     )
 
-    st.subheader("Color Masking (Original Colors on Black Background)")
+    st.subheader("Color Masking (Only Persons Visible)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -117,6 +117,8 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
+
 
 
 
