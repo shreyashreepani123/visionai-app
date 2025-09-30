@@ -14,7 +14,7 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # Must match training
+NUM_CLASSES = 91   # Must match your training setup
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
 
@@ -45,18 +45,11 @@ def load_model():
 
 
 # ---------------- TRANSFORMS ----------------
-# ⚠️ IMPORTANT: same as training (resize only, no normalization)
+# IMPORTANT: same preprocessing as training (resize only, no normalization)
 transform = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor()
 ])
-
-
-def postprocess_to_original(logits, orig_h, orig_w):
-    """Resize logits back to original size, take argmax."""
-    up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
-    pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
-    return pred
 
 
 def clean_mask(mask):
@@ -65,6 +58,15 @@ def clean_mask(mask):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return mask
+
+
+def get_colored_mask(mask, num_classes=NUM_CLASSES):
+    """Assign random colors to each class."""
+    rng = np.random.RandomState(42)
+    palette = rng.randint(0, 256, size=(num_classes, 3), dtype=np.uint8)
+    palette[0] = np.array([0, 0, 0], dtype=np.uint8)  # background black
+    colored = palette[mask]
+    return colored
 
 
 # ---------------- STREAMLIT APP ----------------
@@ -89,24 +91,18 @@ if uploaded is not None:
         inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
         logits = out["out"]
-        pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Background = class 0
-    background_index = 0
+    # Resize logits back to original resolution
+    pred_classes = F.interpolate(
+        logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False
+    ).argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
 
     # ---------------- BINARY MASK ----------------
-    binary = (pred_classes != background_index).astype(np.uint8) * 255
+    binary = (pred_classes != 0).astype(np.uint8) * 255
     binary = clean_mask(binary)
 
-    # ---------------- COLOR MASK ----------------
-    color_mask = np.zeros_like(image_np)
-    mask_area = pred_classes != background_index
-    color_mask[mask_area] = image_np[mask_area]
-
-    # ---------------- DISPLAY ----------------
     st.subheader("Binary Mask (Objects vs Background)")
     st.image(binary, use_column_width=True)
-
     st.download_button(
         "⬇ Download Binary Mask (PNG)",
         data=BytesIO(cv2.imencode(".png", binary)[1].tobytes()),
@@ -114,15 +110,31 @@ if uploaded is not None:
         mime="image/png",
     )
 
+    # ---------------- COLOR MASK ----------------
+    color_mask = np.zeros_like(image_np)
+    color_mask[pred_classes != 0] = image_np[pred_classes != 0]
+
     st.subheader("Color Mask (Original Colors on Black)")
     st.image(color_mask, use_column_width=True)
-
     st.download_button(
         "⬇ Download Color Mask (PNG)",
         data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
         file_name="color_mask.png",
         mime="image/png",
     )
+
+    # ---------------- PSEUDO-COLOR MASK ----------------
+    pseudo_color = get_colored_mask(pred_classes)
+
+    st.subheader("Pseudo-Colored Segmentation (Random Colors per Class)")
+    st.image(pseudo_color, use_column_width=True)
+    st.download_button(
+        "⬇ Download Pseudo-Colored Mask (PNG)",
+        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(pseudo_color, cv2.COLOR_RGB2BGR))[1].tobytes()),
+        file_name="pseudo_colored_mask.png",
+        mime="image/png",
+    )
+
 
 
 
