@@ -65,7 +65,7 @@ transform = T.Compose([
 
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Segmentation Demo", layout="centered")
+st.set_page_config(page_title="VisionAI: Image Segmentation Demo", layout="centered")
 
 st.title("🔍 VisionAI Segmentation Demo")
 st.write("Upload an image to see binary and color masking results. Model runs on CPU.")
@@ -89,6 +89,7 @@ if uploaded_file is not None:
 
     # Show results
     st.image(mask.numpy(), caption="Predicted Mask", use_column_width=True)
+
 
 
 
