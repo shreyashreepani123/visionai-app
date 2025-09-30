@@ -1,4 +1,3 @@
-# app.py
 import os
 import io
 import numpy as np
@@ -12,58 +11,39 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 import gdown
 
 # ------------------ CONFIG ------------------
-# 1) Put your public Google Drive file ID here (JUST THE ID, not the whole URL)
-FILE_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"  # e.g. 1Bd-iZ8b_37vxXCWRNwk-CtxBVxgG97V3
+FILE_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"   # ✅ Your Drive file ID
 CHECKPOINT_PATH = "checkpoint.pth"
-
-# 2) CPU only (Streamlit Cloud has no GPU)
-DEVICE = torch.device("cpu")
-
-# 3) Input size for inference (model runs at 256 then we resize mask back)
+DEVICE = torch.device("cpu")  # Streamlit Cloud has no GPU
 IMAGE_SIZE = 256
 
-# ------------------ HELPERS ------------------
-def image_download_button(img_pil: Image.Image, filename: str, label: str):
-    buf = io.BytesIO()
-    img_pil.save(buf, format="PNG")
-    st.download_button(label, buf.getvalue(), file_name=filename, mime="image/png")
 
-
+# ------------------ UTIL: Download checkpoint ------------------
 def ensure_checkpoint():
-    """
-    Ensure checkpoint.pth exists locally. If not, download from Google Drive using the FILE_ID.
-    Also validate that a .pth is actually present after download.
-    """
+    """Ensure checkpoint.pth exists locally, download if missing."""
     if os.path.exists(CHECKPOINT_PATH) and os.path.getsize(CHECKPOINT_PATH) > 0:
         return
 
-    if not FILE_ID or FILE_ID.strip() in ("", "PUT_YOUR_FILE_ID_HERE"):
+    if not FILE_ID or FILE_ID.strip() == "":
         raise RuntimeError("Please set FILE_ID at the top of app.py to your Google Drive file ID.")
 
-    url = f"https://drive.google.com/uc?id={FILE_ID}"
+    url = f"https://drive.google.com/uc?id={FILE_ID}&confirm=t"
     st.info("⬇️ Downloading model weights from Google Drive...")
+
     try:
-        gdown.download(url, CHECKPOINT_PATH, quiet=False)
+        # fuzzy=True helps bypass the 'Download anyway' confirmation
+        output = gdown.download(url, CHECKPOINT_PATH, quiet=False, fuzzy=True)
     except Exception as e:
         raise RuntimeError(f"gdown failed to download model: {e}")
 
-    # If the file didn't come down as 'checkpoint.pth', try to find any .pth and rename it
-    if not os.path.exists(CHECKPOINT_PATH) or os.path.getsize(CHECKPOINT_PATH) == 0:
-        for f in os.listdir("."):
-            if f.lower().endswith(".pth"):
-                try:
-                    os.replace(f, CHECKPOINT_PATH)
-                    break
-                except Exception:
-                    pass
-
-    if not os.path.exists(CHECKPOINT_PATH) or os.path.getsize(CHECKPOINT_PATH) == 0:
+    # Verify file
+    if not output or not os.path.exists(CHECKPOINT_PATH) or os.path.getsize(CHECKPOINT_PATH) == 0:
         raise FileNotFoundError(
-            "Download finished, but 'checkpoint.pth' not found or empty. "
-            "Check Drive sharing and FILE_ID."
+            "❌ Download failed: checkpoint.pth not found or empty. "
+            "Check Drive sharing (file must be 'Anyone with link can view')."
         )
 
-    st.success("✅ Download complete.")
+    st.success("✅ Model checkpoint downloaded successfully.")
+
 
 
 def detect_num_classes(state_dict: dict, fallback: int = 2) -> int:
@@ -179,6 +159,7 @@ if uploaded:
         image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
 else:
     st.info("👉 Upload a JPG/PNG image to get started.")
+
 
 
 
