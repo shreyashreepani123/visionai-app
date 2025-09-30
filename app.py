@@ -70,7 +70,7 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Ultimate Segmentation", layout="centered")
-st.title("🌍 VisionAI: Ultra Accurate Image Segmentation")
+st.title("🌍 VisionAI: IMAGE SEGMENTATION")
 st.write("Upload an image and get world-class segmentation masks (all classes).")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
@@ -107,6 +107,7 @@ if uploaded is not None:
                        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                        file_name="color_mask.png",
                        mime="image/png")
+
 
 
 
