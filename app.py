@@ -31,9 +31,6 @@ def load_model():
     ensure_checkpoint()
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
 
-    # Debug: print checkpoint keys
-    st.write("🔑 Checkpoint keys:", list(checkpoint.keys())[:20])
-
     # Handle different formats
     if "model_state" in checkpoint:
         state_dict = checkpoint["model_state"]
@@ -42,16 +39,13 @@ def load_model():
     else:
         state_dict = checkpoint
 
-    st.write("📂 First 20 state_dict keys:", list(state_dict.keys())[:20])
+    # Match num_classes = 91 (your checkpoint was trained with 91 classes!)
+    model = models.deeplabv3_resnet50(weights=None, num_classes=91)
 
-    # Try model
-    model = models.deeplabv3_resnet50(weights=None, num_classes=21)
-    try:
-        missing, unexpected = model.load_state_dict(state_dict, strict=False)
-        st.write("⚠️ Missing keys:", missing)
-        st.write("⚠️ Unexpected keys:", unexpected)
-    except Exception as e:
-        st.error(f"❌ Error loading checkpoint: {e}")
+    # Load checkpoint with strict=False to ignore mismatches
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    st.write("⚠️ Missing keys:", missing)
+    st.write("⚠️ Unexpected keys:", unexpected)
 
     model = model.to(DEVICE)
     model.eval()
@@ -88,12 +82,15 @@ if uploaded_file is not None:
     # Segmentation prediction
     mask = output.argmax(0).cpu().numpy()
 
+    # Resize masks back to original size
+    mask_img = Image.fromarray(mask.astype(np.uint8)).resize(image.size, resample=Image.NEAREST)
+    mask = np.array(mask_img)
+
     # --- Binary mask (object=white, background=black) ---
     binary_mask = (mask > 0).astype(np.uint8) * 255
 
     # --- Colored masking (object keeps real colors, background black) ---
-    img_resized = image.resize((IMAGE_SIZE, IMAGE_SIZE))
-    img_np = np.array(img_resized)
+    img_np = np.array(image)
     color_mask = img_np.copy()
     color_mask[mask == 0] = [0, 0, 0]
 
