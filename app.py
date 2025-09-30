@@ -9,8 +9,6 @@ import streamlit as st
 import numpy as np
 import cv2
 from io import BytesIO
-import pydensecrf.densecrf as dcrf
-from pydensecrf.utils import unary_from_softmax
 
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
@@ -58,38 +56,26 @@ def predict(model, pil_img):
     return probs
 
 
-def apply_densecrf(image_np, probs):
-    """DenseCRF refinement"""
-    h, w = image_np.shape[:2]
-    probs = np.clip(probs, 1e-8, 1.0)  # avoid log(0)
-    U = unary_from_softmax(probs)  # shape (num_classes, H*W)
-    U = np.ascontiguousarray(U)
+def refine_with_grabcut(image_np, probs):
+    """Use GrabCut guided by model mask"""
+    pred_classes = np.argmax(probs, axis=0).astype(np.uint8)
 
-    d = dcrf.DenseCRF2D(w, h, probs.shape[0])
-    d.setUnaryEnergy(U)
+    # Initial mask for GrabCut
+    mask = np.where(pred_classes > 0, cv2.GC_PR_FGD, cv2.GC_BGD).astype("uint8")
 
-    # Add pairwise Gaussian (spatial smoothness)
-    d.addPairwiseGaussian(sxy=3, compat=3)
+    bgd_model = np.zeros((1, 65), np.float64)
+    fgd_model = np.zeros((1, 65), np.float64)
 
-    # Add pairwise bilateral (edge alignment)
-    d.addPairwiseBilateral(sxy=50, srgb=13, rgbim=image_np, compat=10)
+    # Run GrabCut refinement
+    cv2.grabCut(image_np, mask, None, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_MASK)
 
-    Q = d.inference(10)  # 10 iterations
-    preds = np.array(Q).reshape((probs.shape[0], h, w))
-    refined = np.argmax(preds, axis=0)
-    return refined
-
-
-def refine_mask(pred_classes):
-    """Turn argmax output into binary mask"""
-    majority_class = np.bincount(pred_classes.flatten()).argmax()
-    binary = (pred_classes != majority_class).astype(np.uint8) * 255
-    return binary
+    final_mask = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype("uint8")
+    return final_mask
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo (DenseCRF Enhanced)")
+st.title("🔍 VisionAI Segmentation Demo (GrabCut Enhanced)")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -106,22 +92,18 @@ if uploaded is not None:
     # Inference (get probabilities)
     probs = predict(model, image_pil)
 
-    # CRF refinement
-    pred_classes = apply_densecrf(image_np, probs)
+    # Refinement with GrabCut
+    binary = refine_with_grabcut(image_np, probs)
 
-    # Binary mask
-    binary = refine_mask(pred_classes)
-
-    # Color mask
-    color_mask = np.zeros_like(image_np)
-    mask_area = (binary == 255)
-    color_mask[mask_area] = image_np[mask_area]
+    # Color mask overlay
+    color_mask = image_np.copy()
+    color_mask[binary == 0] = 0  # keep only foreground
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (DenseCRF Enhanced)")
+    st.subheader("Binary Mask (GrabCut Refined)")
     st.image(binary, use_column_width=True)
 
-    st.subheader("Color Mask (DenseCRF Enhanced)")
+    st.subheader("Color Mask (GrabCut Refined)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -137,6 +119,8 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
+
 
 
 
