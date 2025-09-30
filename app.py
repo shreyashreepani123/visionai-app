@@ -9,6 +9,8 @@ import streamlit as st
 import numpy as np
 import cv2
 from io import BytesIO
+import pydensecrf.densecrf as dcrf
+from pydensecrf.utils import unary_from_softmax
 
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
@@ -46,33 +48,48 @@ transform = T.Compose([
 
 
 def predict(model, pil_img):
-    """Prediction without any filtering"""
+    """Return raw probability maps"""
     w, h = pil_img.size
     inp = transform(pil_img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         out = model(inp)["out"]
     out_up = F.interpolate(out, size=(h, w), mode="bilinear", align_corners=False)
     probs = torch.softmax(out_up, dim=1).squeeze(0).cpu().numpy()
-    pred_classes = np.argmax(probs, axis=0)
-    return pred_classes
+    return probs
+
+
+def apply_densecrf(image_np, probs):
+    """DenseCRF refinement"""
+    h, w = image_np.shape[:2]
+    probs = np.clip(probs, 1e-8, 1.0)  # avoid log(0)
+    U = unary_from_softmax(probs)  # shape (num_classes, H*W)
+    U = np.ascontiguousarray(U)
+
+    d = dcrf.DenseCRF2D(w, h, probs.shape[0])
+    d.setUnaryEnergy(U)
+
+    # Add pairwise Gaussian (spatial smoothness)
+    d.addPairwiseGaussian(sxy=3, compat=3)
+
+    # Add pairwise bilateral (edge alignment)
+    d.addPairwiseBilateral(sxy=50, srgb=13, rgbim=image_np, compat=10)
+
+    Q = d.inference(10)  # 10 iterations
+    preds = np.array(Q).reshape((probs.shape[0], h, w))
+    refined = np.argmax(preds, axis=0)
+    return refined
 
 
 def refine_mask(pred_classes):
-    """Turn argmax output into usable masks"""
-    # Binary mask = everything that's not the majority background class
+    """Turn argmax output into binary mask"""
     majority_class = np.bincount(pred_classes.flatten()).argmax()
     binary = (pred_classes != majority_class).astype(np.uint8) * 255
-
-    # Small cleanup (but keep details)
-    kernel = np.ones((3, 3), np.uint8)
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-
     return binary
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo (Raw Argmax, Max Accuracy)")
+st.title("🔍 VisionAI Segmentation Demo (DenseCRF Enhanced)")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -86,10 +103,13 @@ if uploaded is not None:
     # Load model
     model = load_model()
 
-    # Inference
-    pred_classes = predict(model, image_pil)
+    # Inference (get probabilities)
+    probs = predict(model, image_pil)
 
-    # Refined mask
+    # CRF refinement
+    pred_classes = apply_densecrf(image_np, probs)
+
+    # Binary mask
     binary = refine_mask(pred_classes)
 
     # Color mask
@@ -98,10 +118,10 @@ if uploaded is not None:
     color_mask[mask_area] = image_np[mask_area]
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (Raw Argmax)")
+    st.subheader("Binary Mask (DenseCRF Enhanced)")
     st.image(binary, use_column_width=True)
 
-    st.subheader("Color Mask (Raw Argmax)")
+    st.subheader("Color Mask (DenseCRF Enhanced)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -110,6 +130,15 @@ if uploaded is not None:
         file_name="binary_mask.png",
         mime="image/png",
     )
+
+    st.download_button(
+        "⬇ Download Color Mask (PNG)",
+        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
+        file_name="color_mask.png",
+        mime="image/png",
+    )
+
+
 
 
 
