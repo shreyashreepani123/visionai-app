@@ -1,164 +1,96 @@
 import os
-import io
-import numpy as np
-import streamlit as st
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms as T
 from PIL import Image
-from albumentations import Compose, Resize
-from albumentations.pytorch import ToTensorV2
-from torchvision.models.segmentation import deeplabv3_resnet50
+import streamlit as st
 import gdown
 
-# ------------------ CONFIG ------------------
-FILE_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"   # ✅ Your Drive file ID
+# ---------------- CONFIG ----------------
+# 1) Model download from GitHub Release
 CHECKPOINT_PATH = "checkpoint.pth"
-DEVICE = torch.device("cpu")  # Streamlit Cloud has no GPU
+MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
+
+# 2) Force CPU on Streamlit Cloud (no GPU available)
+DEVICE = torch.device("cpu")
+
+# 3) Inference image size (model will be resized to this then back to original)
 IMAGE_SIZE = 256
 
 
-# ------------------ UTIL: Download checkpoint ------------------
+# ---------------- UTIL: Download checkpoint ----------------
 def ensure_checkpoint():
-    """Ensure checkpoint.pth exists locally, download if missing."""
-    if os.path.exists(CHECKPOINT_PATH) and os.path.getsize(CHECKPOINT_PATH) > 0:
+    if os.path.exists(CHECKPOINT_PATH):
         return
-
-    if not FILE_ID or FILE_ID.strip() == "":
-        raise RuntimeError("Please set FILE_ID at the top of app.py to your Google Drive file ID.")
-
-    url = f"https://drive.google.com/uc?id={FILE_ID}&confirm=t"
-    st.info("⬇️ Downloading model weights from Google Drive...")
-
-    try:
-        # fuzzy=True helps bypass the 'Download anyway' confirmation
-        output = gdown.download(url, CHECKPOINT_PATH, quiet=False, fuzzy=True)
-    except Exception as e:
-        raise RuntimeError(f"gdown failed to download model: {e}")
-
-    # Verify file
-    if not output or not os.path.exists(CHECKPOINT_PATH) or os.path.getsize(CHECKPOINT_PATH) == 0:
-        raise FileNotFoundError(
-            "❌ Download failed: checkpoint.pth not found or empty. "
-            "Check Drive sharing (file must be 'Anyone with link can view')."
-        )
-
-    st.success("✅ Model checkpoint downloaded successfully.")
+    st.write("📥 Downloading model weights from GitHub Releases...")
+    gdown.download(MODEL_URL, CHECKPOINT_PATH, quiet=False)
+    st.write("✅ Download complete.")
 
 
+# ---------------- MODEL ----------------
+class SimpleUNet(nn.Module):
+    def __init__(self):
+        super(SimpleUNet, self).__init__()
+        self.enc1 = nn.Conv2d(3, 64, 3, padding=1)
+        self.enc2 = nn.Conv2d(64, 128, 3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.dec1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.out = nn.Conv2d(64, 1, 1)
 
-def detect_num_classes(state_dict: dict, fallback: int = 2) -> int:
-    """
-    Try to infer num_classes from DeepLabV3 head weight shape.
-    """
-    keys = [
-        "classifier.4.weight",
-        "module.classifier.4.weight",
-    ]
-    for k in keys:
-        if k in state_dict:
-            return int(state_dict[k].shape[0])
-    return fallback
+    def forward(self, x):
+        x1 = F.relu(self.enc1(x))
+        x2 = self.pool(x1)
+        x2 = F.relu(self.enc2(x2))
+        x3 = self.dec1(x2)
+        x = torch.sigmoid(self.out(x3))
+        return x
 
 
+# ---------------- LOAD MODEL ----------------
 @st.cache_resource
-def load_model() -> torch.nn.Module:
-    """
-    Load DeepLabV3-ResNet50 model with weights from checkpoint.pth (CPU).
-    """
+def load_model():
     ensure_checkpoint()
-
-    ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    # Support both raw state_dict and wrapped dicts
-    state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
-
-    # Remove a possible 'module.' prefix if the model was saved with DataParallel
-    norm_sd = {}
-    for k, v in state_dict.items():
-        if k.startswith("module."):
-            norm_sd[k[len("module."):]] = v
-        else:
-            norm_sd[k] = v
-
-    num_classes = detect_num_classes(norm_sd, fallback=2)
-
-    model = deeplabv3_resnet50(weights=None, aux_loss=True)
-    model.classifier[4] = nn.Conv2d(256, num_classes, kernel_size=1)
-    if getattr(model, "aux_classifier", None) is not None:
-        model.aux_classifier[4] = nn.Conv2d(256, num_classes, kernel_size=1)
-
-    load_res = model.load_state_dict(norm_sd, strict=False)
-    print("load_state_dict:", load_res)  # will show missing/unexpected keys
-
-    model.to(DEVICE).eval()
+    model = SimpleUNet().to(DEVICE)
+    model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE)["model_state"])
+    model.eval()
     return model
 
 
-# Albumentations transform
-transform = Compose([
-    Resize(IMAGE_SIZE, IMAGE_SIZE, interpolation=1),  # 1 == cv2.INTER_NEAREST
-    ToTensorV2()
+# ---------------- IMAGE TRANSFORMS ----------------
+transform = T.Compose([
+    T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    T.ToTensor(),
 ])
 
 
-def predict_mask(model: torch.nn.Module, pil_img: Image.Image) -> np.ndarray:
-    """
-    Run segmentation and return a HxW uint8 mask (labels).
-    """
-    orig_w, orig_h = pil_img.size
-    resized = pil_img.resize((IMAGE_SIZE, IMAGE_SIZE))
-    augmented = transform(image=np.array(resized))
-    x = augmented["image"].unsqueeze(0).float().to(DEVICE)  # [1,3,H,W]
+# ---------------- STREAMLIT APP ----------------
+st.set_page_config(page_title="VisionAI Segmentation Demo", layout="centered")
+
+st.title("🔍 VisionAI Segmentation Demo")
+st.write("Upload an image to see binary and color masking results. Model runs on CPU.")
+
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="Uploaded Image", use_column_width=True)
+
+    model = load_model()
+
+    # Preprocess
+    img_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        out = model(x)["out"]  # [1, num_classes, H, W]
-        preds = torch.argmax(out, dim=1).squeeze(0).cpu().numpy().astype(np.uint8)
+        output = model(img_tensor)[0][0].cpu()
 
-    # Resize mask back to original size using nearest to preserve labels
-    mask = Image.fromarray(preds).resize((orig_w, orig_h), Image.NEAREST)
-    return np.array(mask).astype(np.uint8)
+    # Convert to binary mask
+    mask = (output > 0.5).float()
+
+    # Show results
+    st.image(mask.numpy(), caption="Predicted Mask", use_column_width=True)
 
 
-# ------------------ UI ------------------
-st.set_page_config(page_title="VisionAI Segmentation", page_icon="🔍", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo")
-st.caption("Upload an image to see binary and color masking results. Model runs on CPU.")
-
-# Load model (download checkpoint first)
-try:
-    model = load_model()
-except Exception as e:
-    st.error(f"Failed to load model: {e}")
-    st.stop()
-
-uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-
-if uploaded:
-    pil_img = Image.open(uploaded).convert("RGB")
-    st.image(pil_img, caption="Original Image", use_column_width=True)
-
-    with st.spinner("Running segmentation..."):
-        mask = predict_mask(model, pil_img)
-
-    # Binary mask (foreground white, background black)
-    bin_mask = (mask != 0).astype(np.uint8) * 255
-    bin_mask_pil = Image.fromarray(bin_mask)
-
-    # Color mask (foreground retains original colors, background black)
-    orig_np = np.array(pil_img).astype(np.uint8)
-    color_np = orig_np.copy()
-    color_np[mask == 0] = 0
-    color_mask_pil = Image.fromarray(color_np)
-
-    st.subheader("Results")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.image(bin_mask_pil, caption="Binary Mask (B/W)", use_column_width=True)
-        image_download_button(bin_mask_pil, "binary_mask.png", "⬇️ Download Binary Mask")
-    with c2:
-        st.image(color_mask_pil, caption="Color Mask (Background Black)", use_column_width=True)
-        image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
-else:
-    st.info("👉 Upload a JPG/PNG image to get started.")
 
 
 
