@@ -13,7 +13,11 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 2   # ⚠️ set correctly (2 for fg/bg, 21 for VOC, 91 for COCO)
+
+# ⚠️ Update this based on your training
+NUM_CLASSES = 2   # Use 2 if foreground/background, 21 for VOC, 91 for COCO
+BACKBONE = "resnet50"  # change to "resnet101" if trained with ResNet101
+
 DEVICE = torch.device("cpu")
 CONF_THRESH = 0.6
 
@@ -30,9 +34,27 @@ def ensure_checkpoint():
 @st.cache_resource
 def load_model():
     ensure_checkpoint()
-    model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
+
+    # Detect which key holds weights
+    if "model_state" in ckpt:
+        state_dict = ckpt["model_state"]
+    elif "state_dict" in ckpt:
+        state_dict = ckpt["state_dict"]
+    elif "model" in ckpt:
+        state_dict = ckpt["model"]
+    else:
+        state_dict = ckpt
+
+    # Select backbone
+    if BACKBONE == "resnet50":
+        model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
+    elif BACKBONE == "resnet101":
+        model = segmodels.deeplabv3_resnet101(weights=None, num_classes=NUM_CLASSES)
+    else:
+        raise ValueError("Unsupported backbone. Use resnet50 or resnet101.")
+
+    # Load weights safely
     model.load_state_dict(state_dict, strict=False)
     model.to(DEVICE).eval()
     return model
@@ -47,7 +69,7 @@ base_transform = T.Compose([
 
 
 def predict_with_tta(model, image_pil):
-    """Test-time augmentation: normal + flipped + scaled"""
+    """Test-time augmentation: original + flipped + scaled"""
     w, h = image_pil.size
     img_tensor = base_transform(image_pil).unsqueeze(0).to(DEVICE)
 
@@ -55,14 +77,12 @@ def predict_with_tta(model, image_pil):
 
     # Normal
     with torch.no_grad():
-        out = model(img_tensor)["out"]
-        preds.append(out)
+        preds.append(model(img_tensor)["out"])
 
     # Horizontal flip
     with torch.no_grad():
         out = model(torch.flip(img_tensor, dims=[3]))["out"]
-        out = torch.flip(out, dims=[3])  # flip back
-        preds.append(out)
+        preds.append(torch.flip(out, dims=[3]))
 
     # Scale (downsize + upsize)
     scaled = T.Resize((h // 2, w // 2))(image_pil)
@@ -77,32 +97,13 @@ def predict_with_tta(model, image_pil):
     return avg_logits
 
 
-def refine_mask_with_crf(image_np, mask):
-    """Apply DenseCRF refinement for sharper edges"""
-    import pydensecrf.densecrf as dcrf
-    from pydensecrf.utils import unary_from_labels
-
-    labels = mask.astype(np.int32)
-    n_labels = 2
-
-    d = dcrf.DenseCRF2D(image_np.shape[1], image_np.shape[0], n_labels)
-    unary = unary_from_labels(labels, n_labels, gt_prob=0.7)
-    d.setUnaryEnergy(unary)
-
-    d.addPairwiseGaussian(sxy=3, compat=3)
-    d.addPairwiseBilateral(sxy=20, srgb=13, rgbim=image_np, compat=10)
-
-    Q = d.inference(5)
-    refined = np.argmax(np.array(Q), axis=0).reshape((image_np.shape[0], image_np.shape[1]))
-    return refined.astype(np.uint8) * 255
-
-
 def clean_mask(mask):
+    """Remove noise + fill gaps"""
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-    # Remove small objects
+    # Remove very small blobs
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     new_mask = np.zeros_like(mask)
     for i in range(1, num_labels):
@@ -134,12 +135,9 @@ if uploaded is not None:
     pred_classes = np.argmax(probs, axis=0)
     max_conf = np.max(probs, axis=0)
 
-    # Binary mask
+    # Binary mask: use confidence
     binary = ((pred_classes != 0) & (max_conf > CONF_THRESH)).astype(np.uint8) * 255
-
-    # Clean + CRF refine
     binary = clean_mask(binary)
-    binary = refine_mask_with_crf(image_np, binary // 255)
 
     # Color mask
     color_mask = np.zeros_like(image_np)
@@ -165,11 +163,6 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
-
-
-
-
-
 
 
 
