@@ -1,90 +1,50 @@
-import os
 import cv2
 import numpy as np
-import requests
-from PIL import Image
+import pydensecrf.densecrf as dcrf
+from pydensecrf.utils import unary_from_softmax
 
-import torch
-import torch.nn.functional as F
-import torchvision.transforms as T
-import torchvision.models.segmentation as segmodels
-
-import streamlit as st
-
-# ---------------- CONFIG ----------------
-MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
-CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91           # <- adjust this if your training had fewer classes
-DEVICE = torch.device("cpu")
-
-
-# ---------------- Utils ----------------
-def ensure_checkpoint():
-    if os.path.exists(CHECKPOINT_PATH):
-        return
-    st.write("⬇️ Downloading checkpoint from GitHub release...")
-    r = requests.get(MODEL_URL, timeout=300, allow_redirects=True)
-    r.raise_for_status()
-    with open(CHECKPOINT_PATH, "wb") as f:
-        f.write(r.content)
-    st.write("✅ Download complete!")
-
-
-@st.cache_resource
-def load_model():
-    ensure_checkpoint()
-    model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
-    ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
-    model.load_state_dict(state_dict, strict=False)
-    model.to(DEVICE).eval()
-    return model
-
-
-# torchvision transform
-_t = T.Compose([
-    T.ToTensor(),
-    T.Normalize(mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225)),
-])
-
-
-def softmax_probs(model, pil_img: Image.Image) -> np.ndarray:
-    """Return per-class probabilities upsampled to original HxW."""
-    w, h = pil_img.size
-    x = _t(pil_img).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        out = model(x)["out"]                      # [1,C,h',w']
-        out = F.interpolate(out, size=(h, w), mode="bilinear", align_corners=False)
-        probs = torch.softmax(out, dim=1).squeeze(0).cpu().numpy()  # [C,H,W]
-    return probs
-
-
-def visualize_raw_predictions(probs: np.ndarray) -> np.ndarray:
-    """Color map for argmax predictions (for debugging)."""
-    pred_classes = np.argmax(probs, axis=0).astype(np.uint8)
-    color_map = (pred_classes * 15) % 255
-    return color_map
-
-
-def safe_refine(image_rgb: np.ndarray, probs: np.ndarray) -> np.ndarray:
+def apply_dense_crf(image: np.ndarray, probs: np.ndarray) -> np.ndarray:
     """
-    Safe refinement:
-      - Keep low threshold foreground to avoid empty results.
-      - Falls back to argmax if mask is empty.
+    Refine segmentation with DenseCRF.
+    image: RGB image
+    probs: [C, H, W] softmax probabilities
     """
-    H, W, _ = image_rgb.shape
-    arg = probs.argmax(0)
-    bg_idx = int(np.bincount(arg.flatten()).argmax())
+    H, W = image.shape[:2]
+    n_classes = probs.shape[0]
 
-    maxp = probs.max(0)
-    fg = (arg != bg_idx) & (maxp > 0.2)
+    d = dcrf.DenseCRF2D(W, H, n_classes)
 
-    if fg.sum() < 50:   # if almost empty, fallback
-        fg = (arg != bg_idx)
+    # Use softmax outputs as unary potentials
+    U = unary_from_softmax(probs)
+    d.setUnaryEnergy(U)
 
-    mask = (fg.astype(np.uint8) * 255)
+    # Add pairwise terms (bilateral + spatial)
+    d.addPairwiseGaussian(sxy=3, compat=3)
+    d.addPairwiseBilateral(sxy=50, srgb=13, rgbim=image, compat=10)
+
+    Q = d.inference(5)  # number of iterations
+    refined = np.array(Q).reshape((n_classes, H, W))
+    return refined
+
+
+def enhance_mask(image: np.ndarray, probs: np.ndarray) -> np.ndarray:
+    """
+    Combines CRF + morphology to clean mask.
+    """
+    crf_probs = apply_dense_crf(image, probs)
+    argmax_map = np.argmax(crf_probs, axis=0).astype(np.uint8)
+
+    # Assume background = most common class
+    bg_idx = int(np.bincount(argmax_map.flatten()).argmax())
+    mask = (argmax_map != bg_idx).astype(np.uint8) * 255
+
+    # Morphological cleanup
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)  # fill holes
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)   # remove noise
+
     return mask
+
 
 
 def color_mask_from_binary(image_rgb: np.ndarray, binary_255: np.ndarray) -> np.ndarray:
@@ -137,6 +97,7 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
 
 
 
