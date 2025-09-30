@@ -6,6 +6,7 @@ import streamlit as st
 import requests
 import numpy as np
 import torchvision.models.segmentation as models
+import io
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_PATH = "checkpoint.pth"
@@ -28,11 +29,12 @@ def ensure_checkpoint():
 @st.cache_resource
 def load_model():
     ensure_checkpoint()
-    model = models.deeplabv3_resnet50(weights=None, num_classes=21)
-
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
 
-    # Flexible key handling
+    # Debug: print checkpoint keys
+    st.write("🔑 Checkpoint keys:", list(checkpoint.keys())[:20])
+
+    # Handle different formats
     if "model_state" in checkpoint:
         state_dict = checkpoint["model_state"]
     elif "state_dict" in checkpoint:
@@ -40,9 +42,16 @@ def load_model():
     else:
         state_dict = checkpoint
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    st.write("⚠️ Missing keys:", missing)
-    st.write("⚠️ Unexpected keys:", unexpected)
+    st.write("📂 First 20 state_dict keys:", list(state_dict.keys())[:20])
+
+    # Try model
+    model = models.deeplabv3_resnet50(weights=None, num_classes=21)
+    try:
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        st.write("⚠️ Missing keys:", missing)
+        st.write("⚠️ Unexpected keys:", unexpected)
+    except Exception as e:
+        st.error(f"❌ Error loading checkpoint: {e}")
 
     model = model.to(DEVICE)
     model.eval()
@@ -74,23 +83,46 @@ if uploaded_file is not None:
     img_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        output = model(img_tensor)["out"][0]   # DeepLab output
+        output = model(img_tensor)["out"][0]
 
     # Segmentation prediction
     mask = output.argmax(0).cpu().numpy()
 
     # --- Binary mask (object=white, background=black) ---
-    binary_mask = (mask > 0).astype(np.uint8) * 255  # 0=background, 255=object
+    binary_mask = (mask > 0).astype(np.uint8) * 255
 
     # --- Colored masking (object keeps real colors, background black) ---
     img_resized = image.resize((IMAGE_SIZE, IMAGE_SIZE))
     img_np = np.array(img_resized)
     color_mask = img_np.copy()
-    color_mask[mask == 0] = [0, 0, 0]  # set background to black
+    color_mask[mask == 0] = [0, 0, 0]
 
     # Show results
     st.image(binary_mask, caption="Binary Segmentation (White=Object, Black=Background)", use_column_width=True)
     st.image(color_mask, caption="Colored Masking (Object in Original Colors, Background Black)", use_column_width=True)
+
+    # ---------------- DOWNLOAD BUTTONS ----------------
+    # Binary mask download
+    bin_img = Image.fromarray(binary_mask)
+    buf_bin = io.BytesIO()
+    bin_img.save(buf_bin, format="PNG")
+    st.download_button(
+        label="⬇️ Download Binary Mask",
+        data=buf_bin.getvalue(),
+        file_name="binary_mask.png",
+        mime="image/png"
+    )
+
+    # Color mask download
+    col_img = Image.fromarray(color_mask)
+    buf_col = io.BytesIO()
+    col_img.save(buf_col, format="PNG")
+    st.download_button(
+        label="⬇️ Download Colored Mask",
+        data=buf_col.getvalue(),
+        file_name="colored_mask.png",
+        mime="image/png"
+    )
 
 
 
