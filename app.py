@@ -12,7 +12,7 @@ import gdown
 
 # ------------------ CONFIG ------------------
 # 1) Put your public Google Drive file ID here
-FILE_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"  # <- e.g. '1Bd-iZ8b_37vxXCWRNwk-CtxBvXgG97V3'
+FILE_ID = "1Bd-iZ8b_37vxXCWRNwk-CtxBVxgG97V3"  # <- e.g. '1Bd-iZ8b_37vxXCWRNwk-CtxBvXgG97V3'
 CHECKPOINT_PATH = "checkpoint.pth"
 
 # 2) Force CPU on Streamlit Cloud (no GPU available)
@@ -25,8 +25,9 @@ IMAGE_SIZE = 256
 def ensure_checkpoint():
     if os.path.exists(CHECKPOINT_PATH):
         return
-    if not FILE_ID or FILE_ID.strip() == "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3":
-        raise RuntimeError("Please set FILE_ID in app.py to your Google Drive file ID.")
+    if not FILE_ID or FILE_ID.strip() == "your_file_id_here":
+    raise RuntimeError("Please set FILE_ID in app.py to your Google Drive file ID.")
+        
     url = f"https://drive.google.com/uc?id={FILE_ID}"
     st.write("⬇️ Downloading model weights from Google Drive...")
     gdown.download(url, CHECKPOINT_PATH, quiet=False)
@@ -125,6 +126,7 @@ if uploaded_file:
         image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
 else:
     st.info("👉 Upload a JPG/PNG image to get started.")
+
 
 
 
