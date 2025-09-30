@@ -13,8 +13,9 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # Must match training
+NUM_CLASSES = 91   # must match your training
 DEVICE = torch.device("cpu")
+CONF_THRESH = 0.5  # adjust if too strict
 
 
 # ---------------- DOWNLOAD MODEL ----------------
@@ -46,7 +47,7 @@ transform = T.Compose([
 
 
 def predict(model, pil_img):
-    """Single inference without filtering too much"""
+    """High accuracy prediction with probabilities"""
     w, h = pil_img.size
     inp = transform(pil_img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
@@ -54,20 +55,28 @@ def predict(model, pil_img):
     out_up = F.interpolate(out, size=(h, w), mode="bilinear", align_corners=False)
     probs = torch.softmax(out_up, dim=1).squeeze(0).cpu().numpy()
     pred_classes = np.argmax(probs, axis=0)
-    return pred_classes, probs
+    conf_map = np.max(probs, axis=0)
+    return pred_classes, conf_map
 
 
-def clean_mask(mask):
-    """Refine mask with morphology"""
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+def refine_mask(pred_classes, conf_map):
+    """Refine predictions while keeping details"""
+    # assume class 0 = background
+    mask = (pred_classes != 0).astype(np.uint8)
+
+    # confidence threshold
+    mask = (mask & (conf_map > CONF_THRESH)).astype(np.uint8)
+
+    # mild cleanup only
+    kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    return mask
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    return mask * 255
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo (Fixed)")
+st.title("🔍 VisionAI Segmentation Demo (Max Accuracy)")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -82,22 +91,18 @@ if uploaded is not None:
     model = load_model()
 
     # Inference
-    pred_classes, probs = predict(model, image_pil)
+    pred_classes, conf_map = predict(model, image_pil)
 
-    # Detect background = most common class
-    background_index = int(np.bincount(pred_classes.flatten()).argmax())
+    # Refined mask
+    binary = refine_mask(pred_classes, conf_map)
 
-    # ---------------- BINARY MASK ----------------
-    binary = (pred_classes != background_index).astype(np.uint8) * 255
-    binary = clean_mask(binary)
-
-    # ---------------- COLOR MASK ----------------
+    # Color mask
     color_mask = np.zeros_like(image_np)
-    mask_area = (pred_classes != background_index)
+    mask_area = (binary == 255)
     color_mask[mask_area] = image_np[mask_area]
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (Fixed)")
+    st.subheader("Binary Mask (Enhanced)")
     st.image(binary, use_column_width=True)
 
     st.download_button(
@@ -107,7 +112,7 @@ if uploaded is not None:
         mime="image/png",
     )
 
-    st.subheader("Color Mask (Fixed)")
+    st.subheader("Color Mask (Enhanced)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -116,6 +121,7 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
 
 
 
