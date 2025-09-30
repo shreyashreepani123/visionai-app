@@ -12,7 +12,7 @@ import gdown   # for downloading model from Google Drive
 
 # ---------- CONFIG ----------
 # Replace with your actual Google Drive file ID for checkpoint.pth
-CHECKPOINT_ID = "YOUR_GOOGLE_DRIVE_FILE_ID"
+CHECKPOINT_ID = "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3"
 CHECKPOINT_PATH = "checkpoint.pth"
 
 if not os.path.exists(CHECKPOINT_PATH):
@@ -90,3 +90,4 @@ if uploaded_file:
     with col2:
         st.image(color_mask_pil, caption="Color Mask", use_column_width=True)
         image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
+
