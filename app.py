@@ -13,7 +13,7 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # must match training
+NUM_CLASSES = 91   # Must match training
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
 
@@ -53,6 +53,14 @@ def postprocess_to_original(logits, orig_h, orig_w):
     return pred
 
 
+def clean_mask(mask):
+    """Remove noise and fill small holes in mask."""
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    return mask
+
+
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
 st.title("🔍 VisionAI Segmentation Demo")
@@ -63,21 +71,28 @@ if uploaded is not None:
     orig_w, orig_h = image_pil.size
     image_np = np.array(image_pil)
 
+    # Show uploaded image
+    st.subheader("Uploaded Image")
+    st.image(image_np, use_column_width=True)
+
+    # Load model
     model = load_model()
 
+    # Inference
     with torch.no_grad():
         inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
         logits = out["out"]
         pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Detect background index = most common class in prediction
+    # Detect background index = most common class
     background_index = int(np.bincount(pred_classes.flatten()).argmax())
 
     # ---------------- BINARY MASK ----------------
     binary = (pred_classes != background_index).astype(np.uint8) * 255
+    binary = clean_mask(binary)
 
-    # ---------------- COLOR MASK (objects keep original colors) ----------------
+    # ---------------- COLOR MASK ----------------
     color_mask = np.zeros_like(image_np)
     mask_area = pred_classes != background_index
     color_mask[mask_area] = image_np[mask_area]
@@ -102,6 +117,8 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
+
 
 
 
