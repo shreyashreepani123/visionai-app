@@ -13,9 +13,8 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # must match your training
+NUM_CLASSES = 91   # must match training
 DEVICE = torch.device("cpu")
-CONF_THRESH = 0.5  # adjust if too strict
 
 
 # ---------------- DOWNLOAD MODEL ----------------
@@ -47,7 +46,7 @@ transform = T.Compose([
 
 
 def predict(model, pil_img):
-    """High accuracy prediction with probabilities"""
+    """Prediction without any filtering"""
     w, h = pil_img.size
     inp = transform(pil_img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
@@ -55,28 +54,25 @@ def predict(model, pil_img):
     out_up = F.interpolate(out, size=(h, w), mode="bilinear", align_corners=False)
     probs = torch.softmax(out_up, dim=1).squeeze(0).cpu().numpy()
     pred_classes = np.argmax(probs, axis=0)
-    conf_map = np.max(probs, axis=0)
-    return pred_classes, conf_map
+    return pred_classes
 
 
-def refine_mask(pred_classes, conf_map):
-    """Refine predictions while keeping details"""
-    # assume class 0 = background
-    mask = (pred_classes != 0).astype(np.uint8)
+def refine_mask(pred_classes):
+    """Turn argmax output into usable masks"""
+    # Binary mask = everything that's not the majority background class
+    majority_class = np.bincount(pred_classes.flatten()).argmax()
+    binary = (pred_classes != majority_class).astype(np.uint8) * 255
 
-    # confidence threshold
-    mask = (mask & (conf_map > CONF_THRESH)).astype(np.uint8)
-
-    # mild cleanup only
+    # Small cleanup (but keep details)
     kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    return mask * 255
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+
+    return binary
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo (Max Accuracy)")
+st.title("🔍 VisionAI Segmentation Demo (Raw Argmax, Max Accuracy)")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -91,10 +87,10 @@ if uploaded is not None:
     model = load_model()
 
     # Inference
-    pred_classes, conf_map = predict(model, image_pil)
+    pred_classes = predict(model, image_pil)
 
     # Refined mask
-    binary = refine_mask(pred_classes, conf_map)
+    binary = refine_mask(pred_classes)
 
     # Color mask
     color_mask = np.zeros_like(image_np)
@@ -102,8 +98,11 @@ if uploaded is not None:
     color_mask[mask_area] = image_np[mask_area]
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (Enhanced)")
+    st.subheader("Binary Mask (Raw Argmax)")
     st.image(binary, use_column_width=True)
+
+    st.subheader("Color Mask (Raw Argmax)")
+    st.image(color_mask, use_column_width=True)
 
     st.download_button(
         "⬇ Download Binary Mask (PNG)",
@@ -112,15 +111,6 @@ if uploaded is not None:
         mime="image/png",
     )
 
-    st.subheader("Color Mask (Enhanced)")
-    st.image(color_mask, use_column_width=True)
-
-    st.download_button(
-        "⬇ Download Color Mask (PNG)",
-        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
-        file_name="color_mask.png",
-        mime="image/png",
-    )
 
 
 
