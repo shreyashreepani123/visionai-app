@@ -17,9 +17,6 @@ NUM_CLASSES = 91   # COCO dataset
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
 
-# COCO class IDs → "person" = 15
-TARGET_CLASS = 15
-
 
 # ---------------- DOWNLOAD MODEL ----------------
 def ensure_checkpoint():
@@ -50,25 +47,52 @@ transform = T.Compose([
 ])
 
 
-def postprocess_to_original(logits, orig_h, orig_w):
-    up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
-    pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
-    return pred
+# ---------------- POSTPROCESSING ----------------
+def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
+    # Get class probabilities
+    probs = torch.softmax(logits, dim=1)  # [1, C, H, W]
+    up = F.interpolate(probs, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+    probs_np = up.squeeze(0).cpu().numpy()  # [C, H, W]
 
+    # Predicted class = highest probability
+    pred_classes = np.argmax(probs_np, axis=0)
+    max_conf = np.max(probs_np, axis=0)
 
-def clean_mask(mask):
-    """Remove noise and fill small holes in mask."""
+    # ---------------- BINARY MASK ----------------
+    # All non-background classes with high confidence
+    binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
+
+    # Morphological cleanup
     kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    return mask
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
+
+    # Keep largest connected components (remove tiny blobs)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+    min_size = 500  # pixels to keep
+    new_mask = np.zeros_like(binary_mask)
+    for i in range(1, num_labels):  # skip background
+        if stats[i, cv2.CC_STAT_AREA] >= min_size:
+            new_mask[labels == i] = 255
+    binary_mask = new_mask
+
+    # ---------------- COLOR MASK ----------------
+    color_mask = np.zeros_like(image_np)
+    color_mask[binary_mask == 255] = image_np[binary_mask == 255]
+
+    return binary_mask, color_mask
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
 st.title("🔍 VisionAI Segmentation Demo")
+st.write("Upload an image to see binary and color masking results. Model runs on CPU.")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+
+# Confidence threshold slider
+conf_thresh = st.slider("Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
+
 if uploaded is not None:
     image_pil = Image.open(uploaded).convert("RGB")
     orig_w, orig_h = image_pil.size
@@ -86,29 +110,22 @@ if uploaded is not None:
         inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
         logits = out["out"]
-        pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # ---------------- PERSON-ONLY MASK ----------------
-    person_mask = (pred_classes == TARGET_CLASS).astype(np.uint8) * 255
-    person_mask = clean_mask(person_mask)
+    # Get cleaned masks
+    binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
 
-    # ---------------- COLOR MASK ----------------
-    color_mask = np.zeros_like(image_np)
-    mask_area = pred_classes == TARGET_CLASS
-    color_mask[mask_area] = image_np[mask_area]
-
-    # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (Persons only)")
-    st.image(person_mask, use_column_width=True)
+    # ---------------- DISPLAY RESULTS ----------------
+    st.subheader("Binary Mask (All Objects)")
+    st.image(binary_mask, use_column_width=True)
 
     st.download_button(
         "⬇️ Download Binary Mask (PNG)",
-        data=BytesIO(cv2.imencode(".png", person_mask)[1].tobytes()),
+        data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
         file_name="binary_mask.png",
         mime="image/png",
     )
 
-    st.subheader("Color Masking (Only Persons Visible)")
+    st.subheader("Color Masking (Objects on Black Background)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -117,7 +134,6 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
-
 
 
 
