@@ -13,7 +13,7 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # set to the number of classes you trained with
+NUM_CLASSES = 91   # must match training
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
 
@@ -33,14 +33,6 @@ def load_model():
     model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
     state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
-
-    # Detect background index automatically (smallest index in classifier.bias)
-    if "classifier.4.bias" in state_dict:
-        background_index = int(state_dict["classifier.4.bias"].argmin().item())
-    else:
-        background_index = 0
-    st.session_state["background_index"] = background_index
-
     model.load_state_dict(state_dict, strict=False)
     model.to(DEVICE).eval()
     return model
@@ -79,13 +71,13 @@ if uploaded is not None:
         logits = out["out"]
         pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Auto background index
-    background_index = st.session_state.get("background_index", 0)
+    # Detect background index = most common class in prediction
+    background_index = int(np.bincount(pred_classes.flatten()).argmax())
 
     # ---------------- BINARY MASK ----------------
     binary = (pred_classes != background_index).astype(np.uint8) * 255
 
-    # ---------------- COLORED MASK (object keeps original colors) ----------------
+    # ---------------- COLOR MASK (objects keep original colors) ----------------
     color_mask = np.zeros_like(image_np)
     mask_area = pred_classes != background_index
     color_mask[mask_area] = image_np[mask_area]
