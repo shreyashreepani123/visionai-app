@@ -10,14 +10,15 @@ import numpy as np
 import cv2
 from io import BytesIO
 
+# ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # your training classes
-BACKGROUND_CLASS = 0  # <-- change if your dataset uses another background id (e.g. 255)
+NUM_CLASSES = 91   # set to the number of classes you trained with
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
 
 
+# ---------------- DOWNLOAD MODEL ----------------
 def ensure_checkpoint():
     if os.path.exists(CHECKPOINT_PATH):
         return
@@ -31,12 +32,21 @@ def load_model():
     ensure_checkpoint()
     model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
-    state_dict = ckpt.get("model_state", ckpt)
+    state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
+
+    # Detect background index automatically (smallest index in classifier.bias)
+    if "classifier.4.bias" in state_dict:
+        background_index = int(state_dict["classifier.4.bias"].argmin().item())
+    else:
+        background_index = 0
+    st.session_state["background_index"] = background_index
+
     model.load_state_dict(state_dict, strict=False)
     model.to(DEVICE).eval()
     return model
 
 
+# ---------------- TRANSFORMS ----------------
 transform = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor(),
@@ -45,28 +55,14 @@ transform = T.Compose([
 ])
 
 
-def decode_segmap(pred, n_classes=NUM_CLASSES):
-    """Create a colored segmentation map."""
-    label_colors = np.random.randint(0, 255, size=(n_classes, 3), dtype=np.uint8)
-    r = np.zeros_like(pred).astype(np.uint8)
-    g = np.zeros_like(pred).astype(np.uint8)
-    b = np.zeros_like(pred).astype(np.uint8)
-    for l in range(0, n_classes):
-        idx = pred == l
-        r[idx] = label_colors[l, 0]
-        g[idx] = label_colors[l, 1]
-        b[idx] = label_colors[l, 2]
-    return np.stack([r, g, b], axis=2)
-
-
 def postprocess_to_original(logits, orig_h, orig_w):
     up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
     pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
     return pred
 
 
+# ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-
 st.title("🔍 VisionAI Segmentation Demo")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
@@ -83,24 +79,38 @@ if uploaded is not None:
         logits = out["out"]
         pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Binary mask (everything != background)
-    binary = (pred_classes != BACKGROUND_CLASS).astype(np.uint8) * 255
+    # Auto background index
+    background_index = st.session_state.get("background_index", 0)
 
-    # Colored segmentation map
-    color_mask = decode_segmap(pred_classes, n_classes=NUM_CLASSES)
+    # ---------------- BINARY MASK ----------------
+    binary = (pred_classes != background_index).astype(np.uint8) * 255
 
-    # Overlay on original
-    overlay = cv2.addWeighted(image_np, 0.6, color_mask, 0.4, 0)
+    # ---------------- COLORED MASK (object keeps original colors) ----------------
+    color_mask = np.zeros_like(image_np)
+    mask_area = pred_classes != background_index
+    color_mask[mask_area] = image_np[mask_area]
 
-    # Show results
+    # ---------------- DISPLAY ----------------
     st.subheader("Binary Mask")
     st.image(binary, use_column_width=True)
 
-    st.subheader("Colored Mask (per class)")
+    st.download_button(
+        "⬇️ Download Binary Mask (PNG)",
+        data=BytesIO(cv2.imencode(".png", binary)[1].tobytes()),
+        file_name="binary_mask.png",
+        mime="image/png",
+    )
+
+    st.subheader("Color Masking (Original Colors on Black Background)")
     st.image(color_mask, use_column_width=True)
 
-    st.subheader("Overlay with Original Image")
-    st.image(overlay, use_column_width=True)
+    st.download_button(
+        "⬇️ Download Color Mask (PNG)",
+        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
+        file_name="color_mask.png",
+        mime="image/png",
+    )
+
 
 
 
