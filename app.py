@@ -1,122 +1,95 @@
 import os
+import cv2
+import numpy as np
+import requests
+from PIL import Image
+
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
-import torchvision.models.segmentation as segmodels
-from PIL import Image
-import requests
+from torchvision.models.segmentation import deeplabv3_resnet50
+
 import streamlit as st
-import numpy as np
-import cv2
-from io import BytesIO
 
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 91   # Must match training
+NUM_CLASSES = 91   # must match training
 DEVICE = torch.device("cpu")
-IMAGE_SIZE = 256
 
-
-# ---------------- DOWNLOAD MODEL ----------------
+# ---------------- Download Checkpoint ----------------
 def ensure_checkpoint():
     if os.path.exists(CHECKPOINT_PATH):
         return
-    r = requests.get(MODEL_URL, allow_redirects=True, timeout=300)
+    st.write("⬇️ Downloading checkpoint...")
+    r = requests.get(MODEL_URL, timeout=300, allow_redirects=True)
+    r.raise_for_status()
     with open(CHECKPOINT_PATH, "wb") as f:
         f.write(r.content)
-
+    st.write("✅ Download complete!")
 
 @st.cache_resource
 def load_model():
     ensure_checkpoint()
-    model = segmodels.deeplabv3_resnet50(weights=None, num_classes=NUM_CLASSES)
+    # Important: must match training setup!
+    model = deeplabv3_resnet50(pretrained=True)
+    model.classifier[4] = nn.Conv2d(256, NUM_CLASSES, kernel_size=1)
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
     state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
     model.load_state_dict(state_dict, strict=False)
     model.to(DEVICE).eval()
     return model
 
-
-# ---------------- TRANSFORMS ----------------
+# ---------------- Transform (match training!) ----------------
 transform = T.Compose([
-    T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    T.ToTensor(),
-    T.Normalize(mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225)),
+    T.Resize((256, 256)),  # same as training
+    T.ToTensor()           # no normalization
 ])
 
-
-def postprocess_to_original(logits, orig_h, orig_w):
-    up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
-    pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
+def predict(model, pil_img):
+    w, h = pil_img.size
+    inp = transform(pil_img).unsqueeze(0).to(DEVICE)
+    with torch.no_grad():
+        out = model(inp)["out"]  # [1,C,H,W]
+        probs = torch.softmax(out, dim=1).squeeze(0).cpu().numpy()
+        pred = np.argmax(probs, axis=0).astype(np.uint8)
     return pred
 
+def colorize_mask(mask, num_classes=NUM_CLASSES):
+    rng = np.random.RandomState(12345)
+    palette = rng.randint(0, 256, size=(num_classes, 3), dtype=np.uint8)
+    palette[0] = np.array([0, 0, 0], dtype=np.uint8)  # background black
+    mask = np.clip(mask, 0, palette.shape[0]-1)
+    return palette[mask]
 
-def clean_mask(mask):
-    """Remove noise and fill small holes in mask."""
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    return mask
-
-
-# ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo")
+# ---------------- Streamlit UI ----------------
+st.set_page_config(page_title="VisionAI Segmentation (Fixed)", layout="centered")
+st.title("🔍 VisionAI Segmentation Demo (Correct Training Setup)")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+
 if uploaded is not None:
-    image_pil = Image.open(uploaded).convert("RGB")
-    orig_w, orig_h = image_pil.size
-    image_np = np.array(image_pil)
+    pil = Image.open(uploaded).convert("RGB")
+    img_np = np.array(pil)
 
-    # Show uploaded image
     st.subheader("Uploaded Image")
-    st.image(image_np, use_column_width=True)
+    st.image(img_np, use_column_width=True)
 
-    # Load model
     model = load_model()
+    pred = predict(model, pil)
 
-    # Inference
-    with torch.no_grad():
-        inp = transform(image_pil).unsqueeze(0).to(DEVICE)
-        out = model(inp)
-        logits = out["out"]
-        pred_classes = postprocess_to_original(logits, orig_h, orig_w)
+    # Binary mask (foreground vs background)
+    binary = (pred != 0).astype(np.uint8) * 255
+    color_mask = colorize_mask(pred)
 
-    # Detect background index = most common class
-    background_index = int(np.bincount(pred_classes.flatten()).argmax())
-
-    # ---------------- BINARY MASK ----------------
-    binary = (pred_classes != background_index).astype(np.uint8) * 255
-    binary = clean_mask(binary)
-
-    # ---------------- COLOR MASK ----------------
-    color_mask = np.zeros_like(image_np)
-    mask_area = pred_classes != background_index
-    color_mask[mask_area] = image_np[mask_area]
-
-    # ---------------- DISPLAY ----------------
     st.subheader("Binary Mask")
     st.image(binary, use_column_width=True)
 
-    st.download_button(
-        "⬇ Download Binary Mask (PNG)",
-        data=BytesIO(cv2.imencode(".png", binary)[1].tobytes()),
-        file_name="binary_mask.png",
-        mime="image/png",
-    )
-
-    st.subheader("Color Masking (Original Colors on Black Background)")
+    st.subheader("Colorized Segmentation")
     st.image(color_mask, use_column_width=True)
 
-    st.download_button(
-        "⬇ Download Color Mask (PNG)",
-        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
-        file_name="color_mask.png",
-        mime="image/png",
-    )
+
 
 
 
