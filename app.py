@@ -25,7 +25,7 @@ IMAGE_SIZE = 256
 def ensure_checkpoint():
     if os.path.exists(CHECKPOINT_PATH):
         return
-    if not FILE_ID or FILE_ID.strip() == "YOUR_DRIVE_FILE_ID":
+    if not FILE_ID or FILE_ID.strip() == "1BD-iZ8b_37vxXCWRNwk-CtxBvXgG97V3":
         raise RuntimeError("Please set FILE_ID in app.py to your Google Drive file ID.")
     url = f"https://drive.google.com/uc?id={FILE_ID}"
     st.write("⬇️ Downloading model weights from Google Drive...")
@@ -125,6 +125,7 @@ if uploaded_file:
         image_download_button(color_mask_pil, "color_mask.png", "⬇️ Download Color Mask")
 else:
     st.info("👉 Upload a JPG/PNG image to get started.")
+
 
 
 
