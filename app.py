@@ -13,10 +13,9 @@ from io import BytesIO
 # ---------------- CONFIG ----------------
 MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 CHECKPOINT_PATH = "checkpoint.pth"
-NUM_CLASSES = 2   # ⚠️ CHANGE this to match your training (e.g., 2 for foreground/background, 21 for VOC)
+NUM_CLASSES = 91   # Must match training
 DEVICE = torch.device("cpu")
-IMAGE_SIZE = 512
-CONF_THRESH = 0.6  # confidence threshold for filtering weak predictions
+IMAGE_SIZE = 256
 
 
 # ---------------- DOWNLOAD MODEL ----------------
@@ -48,38 +47,23 @@ transform = T.Compose([
 ])
 
 
-def postprocess_masks(logits, orig_h, orig_w):
-    """Resize logits back, apply softmax + confidence filtering."""
-    probs = torch.softmax(logits, dim=1)  # [B, C, H, W]
-    up = F.interpolate(probs, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
-    probs_np = up.squeeze(0).cpu().numpy()  # [C, H, W]
-
-    pred_classes = np.argmax(probs_np, axis=0)
-    max_conf = np.max(probs_np, axis=0)
-
-    # Binary mask = pixels above confidence threshold and not background
-    binary = ((pred_classes != 0) & (max_conf > CONF_THRESH)).astype(np.uint8) * 255
-    return binary, pred_classes
+def postprocess_to_original(logits, orig_h, orig_w):
+    up = F.interpolate(logits, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+    pred = up.argmax(dim=1).squeeze(0).cpu().numpy().astype(np.int32)
+    return pred
 
 
 def clean_mask(mask):
-    """Remove noise and smooth mask."""
+    """Remove noise and fill small holes in mask."""
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-
-    # Remove small objects
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-    new_mask = np.zeros_like(mask)
-    for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] >= 500:  # keep only big objects
-            new_mask[labels == i] = 255
-    return new_mask
+    return mask
 
 
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
-st.title("🔍 VisionAI Segmentation Demo (Enhanced)")
+st.title("🔍 VisionAI Segmentation Demo")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 if uploaded is not None:
@@ -99,17 +83,22 @@ if uploaded is not None:
         inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
         logits = out["out"]
-        binary, pred_classes = postprocess_masks(logits, orig_h, orig_w)
+        pred_classes = postprocess_to_original(logits, orig_h, orig_w)
 
-    # Clean mask
+    # Detect background index = most common class
+    background_index = int(np.bincount(pred_classes.flatten()).argmax())
+
+    # ---------------- BINARY MASK ----------------
+    binary = (pred_classes != background_index).astype(np.uint8) * 255
     binary = clean_mask(binary)
 
-    # Color mask
+    # ---------------- COLOR MASK ----------------
     color_mask = np.zeros_like(image_np)
-    color_mask[binary == 255] = image_np[binary == 255]
+    mask_area = pred_classes != background_index
+    color_mask[mask_area] = image_np[mask_area]
 
     # ---------------- DISPLAY ----------------
-    st.subheader("Binary Mask (High-Quality)")
+    st.subheader("Binary Mask")
     st.image(binary, use_column_width=True)
 
     st.download_button(
@@ -119,7 +108,7 @@ if uploaded is not None:
         mime="image/png",
     )
 
-    st.subheader("Color Masking (Objects Only)")
+    st.subheader("Color Masking (Original Colors on Black Background)")
     st.image(color_mask, use_column_width=True)
 
     st.download_button(
@@ -128,6 +117,7 @@ if uploaded is not None:
         file_name="color_mask.png",
         mime="image/png",
     )
+
 
 
 
