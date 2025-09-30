@@ -8,23 +8,39 @@ import streamlit as st
 import numpy as np
 import cv2
 from io import BytesIO
+import requests
 
 # ---------------- CONFIG ----------------
 DEVICE = torch.device("cpu")
-IMAGE_SIZE = 512  # larger input = more accurate
-CONF_THRESH = 0.5  # default confidence threshold
+IMAGE_SIZE = 512
+CONF_THRESH = 0.5
 
+# Your checkpoint from GitHub Release
+MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
+CHECKPOINT_PATH = "checkpoint.pth"
+
+def ensure_checkpoint():
+    if not os.path.exists(CHECKPOINT_PATH):
+        r = requests.get(MODEL_URL, allow_redirects=True, timeout=300)
+        with open(CHECKPOINT_PATH, "wb") as f:
+            f.write(r.content)
 
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    # Use pretrained DeepLabv3 for high accuracy
-    model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
+    ensure_checkpoint()
+    # ⚠️ Make sure num_classes = the same as your training
+    model = segmodels.deeplabv3_resnet50(weights=None, num_classes=2)  
+    ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
+
+    # flexible load
+    state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
+    model.load_state_dict(state_dict, strict=False)
+
     model.to(DEVICE).eval()
     return model
 
-
-# ---------------- TRANSFORMS ----------------
+# ---------------- TRANSFORM ----------------
 transform = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor(),
@@ -32,19 +48,16 @@ transform = T.Compose([
                 std=(0.229, 0.224, 0.225)),
 ])
 
-
 # ---------------- MASK PROCESSING ----------------
 def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
-    # Get probabilities
     probs = torch.softmax(logits, dim=1)
     up = F.interpolate(probs, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
     probs_np = up.squeeze(0).cpu().numpy()
 
-    # Predictions
     pred_classes = np.argmax(probs_np, axis=0)
     max_conf = np.max(probs_np, axis=0)
 
-    # Binary mask: all classes (non-background) above threshold
+    # non-background pixels
     binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
 
     # Morphological cleanup
@@ -52,9 +65,9 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
     binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
     binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
 
-    # Connected components cleanup
+    # Remove small blobs
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
-    min_size = 1000  # filter out tiny noise
+    min_size = 500
     new_mask = np.zeros_like(binary_mask)
     for i in range(1, num_labels):
         if stats[i, cv2.CC_STAT_AREA] >= min_size:
@@ -67,14 +80,12 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
     return binary_mask, color_mask
 
-
-# ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Ultimate Segmentation", layout="centered")
-st.title("🌍 VisionAI: IMAGE SEGMENTATION")
-st.write("Upload an image and get world-class segmentation masks (all classes).")
+# ---------------- STREAMLIT ----------------
+st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
+st.title("VisionAI Segmentation (Your Weights)")
+st.write("Upload an image to see segmentation using your checkpoint.pth model.")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-
 conf_thresh = st.slider("Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
 
 if uploaded is not None:
@@ -86,7 +97,6 @@ if uploaded is not None:
     st.image(image_np, use_column_width=True)
 
     model = load_model()
-
     with torch.no_grad():
         inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
@@ -96,17 +106,9 @@ if uploaded is not None:
 
     st.subheader("Binary Mask (All Objects)")
     st.image(binary_mask, use_column_width=True)
-    st.download_button("⬇️ Download Binary Mask",
-                       data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
-                       file_name="binary_mask.png",
-                       mime="image/png")
 
     st.subheader("Color Masking (Objects on Black Background)")
     st.image(color_mask, use_column_width=True)
-    st.download_button("⬇️ Download Color Mask",
-                       data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
-                       file_name="color_mask.png",
-                       mime="image/png")
 
 
 
