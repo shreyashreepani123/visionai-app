@@ -16,7 +16,7 @@ st.set_page_config(page_title="🌌 VisionExtract AI", layout="wide")
 # ---------------- CUSTOM CSS ----------------
 st.markdown("""
     <style>
-        /* Cosmic Gradient */
+        /* Background Gradient */
         .stApp {
             background: radial-gradient(circle at top left, #0f2027, #203a43, #2c5364);
             color: #ffffff;
@@ -46,7 +46,7 @@ st.markdown("""
             font-weight: bold;
             border-radius: 10px;
             border: none;
-            padding: 12px 24px;
+            padding: 10px 20px;
             font-size: 18px;
         }
         .stButton>button:hover {
@@ -103,81 +103,80 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 # ---------------- APP FLOW ----------------
 st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
 
-# Sidebar navigation
-page = st.sidebar.radio("🔹 Navigate", ["🏠 Home", "✨ Demo", "ℹ️ How it Works", "📊 Results", "📤 Upload Your Own"])
-
-# ---------------- HOME ----------------
-if page == "🏠 Home":
-    st.markdown("<h2>Welcome to VisionExtract AI</h2>", unsafe_allow_html=True)
-    st.write("🚀 This tool brings **cutting-edge segmentation** trained on the **COCO dataset** to your browser with stunning UI.")
-
-# ---------------- DEMO ----------------
-elif page == "✨ Demo":
-    st.markdown("<h2>✨ Demo Image</h2>", unsafe_allow_html=True)
-    demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
-    demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
-    st.image(demo_img, caption="Demo Input Image", use_column_width=True)
+# ---------------- DEMO IMAGE ----------------
+st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
+demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
+demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
+st.image(demo_img, caption="Demo Input Image", use_column_width=True)
 
 # ---------------- HOW IT WORKS ----------------
-elif page == "ℹ️ How it Works":
-    st.markdown("<h2>⚡ How the Tool Works</h2>", unsafe_allow_html=True)
-    st.markdown("""
-    - Upload any image or try the demo  
-    - Automatically segment **all COCO classes** with AI precision  
-    - Remove or replace backgrounds easily  
-    - Highlight edges with stylish overlays  
-    """)
-    st.info("Click **Results** in the sidebar to see segmentation in action!")
+st.markdown("<h2>⚡ How the Tool Works</h2>", unsafe_allow_html=True)
+st.markdown("""
+- Upload any image or try the demo  
+- Automatically segment **all COCO classes** with AI precision  
+- Remove or replace backgrounds easily  
+- Highlight edges with stylish overlays  
+""")
 
-# ---------------- RESULTS ----------------
-elif page == "📊 Results":
-    st.markdown("<h2>📊 AI Segmentation Results</h2>", unsafe_allow_html=True)
+# ---------------- RESULTS (DEMO) ----------------
+st.markdown("<h2>📊 Demo Segmentation Results</h2>", unsafe_allow_html=True)
+demo_np = np.array(demo_img)
+orig_w, orig_h = demo_img.size
 
-    demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
-    demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
-    demo_np = np.array(demo_img)
-    orig_w, orig_h = demo_img.size
+model = load_model()
+with torch.no_grad():
+    inp = transform(demo_img).unsqueeze(0).to(DEVICE)
+    out = model(inp)
+    logits = out["out"]
 
-    model = load_model()
+demo_binary, demo_color = get_clean_masks(logits, orig_h, orig_w, demo_np, conf_thresh=0.5)
+
+col1, col2, col3 = st.columns(3)
+with col1: st.image(demo_np, caption="Original Image", use_column_width=True)
+with col2: st.image(demo_binary, caption="Binary Mask", use_column_width=True)
+with col3: st.image(demo_color, caption="Color Mask", use_column_width=True)
+
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# ---------------- UPLOAD YOUR OWN ----------------
+st.markdown("<h2>📤 Upload Your Own Image</h2>", unsafe_allow_html=True)
+uploaded = st.file_uploader("Upload JPG/PNG", type=["jpg", "jpeg", "png"])
+conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
+
+if uploaded is not None:
+    image_pil = Image.open(uploaded).convert("RGB")
+    orig_w, orig_h = image_pil.size
+    image_np = np.array(image_pil)
+
     with torch.no_grad():
-        inp = transform(demo_img).unsqueeze(0).to(DEVICE)
+        inp = transform(image_pil).unsqueeze(0).to(DEVICE)
         out = model(inp)
         logits = out["out"]
 
-    demo_binary, demo_color = get_clean_masks(logits, orig_h, orig_w, demo_np, conf_thresh=0.5)
+    binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
 
     col1, col2, col3 = st.columns(3)
-    with col1: st.image(demo_np, caption="Original Image", use_column_width=True)
-    with col2: st.image(demo_binary, caption="Binary Mask", use_column_width=True)
-    with col3: st.image(demo_color, caption="Color Mask", use_column_width=True)
+    with col1:
+        st.subheader("📸 Original Image")
+        st.image(image_np, use_column_width=True)
+        st.download_button("⬇ Download Original",
+                           data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
+                           file_name="original.png",
+                           mime="image/png")
+    with col2:
+        st.subheader("⚫ Binary Mask")
+        st.image(binary_mask, use_column_width=True)
+        st.download_button("⬇ Download Binary Mask",
+                           data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
+                           file_name="binary_mask.png",
+                           mime="image/png")
+    with col3:
+        st.subheader("🎨 Color Mask")
+        st.image(color_mask, use_column_width=True)
+        st.download_button("⬇ Download Color Mask",
+                           data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
+                           file_name="color_mask.png",
+                           mime="image/png")
 
-# ---------------- UPLOAD ----------------
-elif page == "📤 Upload Your Own":
-    st.markdown("<h2>📤 Upload Your Own Image</h2>", unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload JPG/PNG", type=["jpg", "jpeg", "png"])
-    conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
 
-    if uploaded is not None:
-        image_pil = Image.open(uploaded).convert("RGB")
-        orig_w, orig_h = image_pil.size
-        image_np = np.array(image_pil)
-
-        model = load_model()
-        with torch.no_grad():
-            inp = transform(image_pil).unsqueeze(0).to(DEVICE)
-            out = model(inp)
-            logits = out["out"]
-
-        binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.subheader("📸 Original Image")
-            st.image(image_np, use_column_width=True)
-        with col2:
-            st.subheader("⚫ Binary Mask")
-            st.image(binary_mask, use_column_width=True)
-        with col3:
-            st.subheader("🎨 Color Mask")
-            st.image(color_mask, use_column_width=True)
 
