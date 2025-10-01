@@ -19,63 +19,106 @@ DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
 CHECKPOINT_PATH = "checkpoint.pth"  # shown to users; real weights stay pretrained if this isn't valid
 
-
-# ========== STARFIELD + THEME CSS ==========
+# ========== VISIBLE CONSTELLATION BACKGROUND + THEME CSS (ONLY UI CHANGES) ==========
 st.markdown("""
 <style>
 /* Dark gradient base */
 .stApp {
-  background: linear-gradient(135deg, #0b1020, #121a2a 45%, #0d1c29);
+  background: radial-gradient(1200px 600px at 20% -10%, #0e1a2b 0%, transparent 60%) ,
+              radial-gradient(1200px 600px at 90% -10%, #0a1526 0%, transparent 60%),
+              linear-gradient(135deg, #0b1020, #0c1728 45%, #0b1522);
   color: #ffffff;
   font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
 }
 
-/* Make content render above animation */
+/* Keep content above the animations */
 .block-container { position: relative; z-index: 5; }
 
-/* --- Starfield animation (three parallax layers) --- */
-#stars, #stars2, #stars3 {
+/* ---------------- Constellation layers ---------------- */
+#stars, #stars2, #stars3, #constellation {
   position: fixed;
-  top: 0; left: 0;
+  inset: 0;
   width: 100vw; height: 100vh;
-  display: block;
-  background: transparent;
-  pointer-events: none;            /* do not block clicks/scroll */
+  pointer-events: none;
   z-index: 0;
 }
 
-#stars:after, #stars2:after, #stars3:after {
-  content: " ";
-  position: absolute;
-  top: -1000px;
-  width: 2px; height: 2px;
-  background: transparent;
+/* Dense fast twinkling starfield (layer 1) */
+#stars:after {
+  content: "";
+  position: absolute; top: -1000px; left: 0;
+  width: 2px; height: 2px; background: transparent;
   box-shadow:
-    1240px 200px #fff, 340px 540px #cfe7ff, 980px 300px #ffffff55, 400px 900px #d0e6ff,
-    760px 120px #ffffff88, 1500px 640px #ffffff, 60px  840px #cfe7ff, 1350px 100px #ffffff88,
-    1020px 760px #ffffffaa, 180px  300px #ffffff55, 860px  560px #ffffffbb, 40px   110px #d0e6ff;
-  animation: animStar 100s linear infinite;
+    24px 56px #fff, 60px 240px #cfe7ff, 120px 120px #ffffffaa, 180px 420px #d0e6ff,
+    240px 360px #ffffff, 300px 40px #ffffffaa, 360px 500px #cfe7ff, 420px 280px #fff,
+    480px 660px #ffffffcc, 540px 180px #ffffff88, 600px 760px #d0e6ff, 660px 520px #ffffff,
+    720px 340px #ffffffaa, 780px 880px #cfe7ff, 840px 100px #ffffffcc, 900px 620px #d0e6ff,
+    960px 260px #ffffff88, 1020px 740px #ffffff, 1080px 420px #cfe7ff, 1140px 540px #ffffff,
+    1200px 300px #ffffffcc, 1260px 860px #d0e6ff, 1320px 120px #ffffffaa, 1380px 480px #fff,
+    1440px 700px #ffffffcc, 1500px 360px #cfe7ff, 1560px 840px #fff, 1620px 220px #ffffffaa;
+  animation: starScroll1 30s linear infinite, twinkle 2.2s ease-in-out infinite alternate;
+  opacity: .95;
 }
 
+/* Parallax star layer 2 */
 #stars2:after {
-  width: 3px; height: 3px;
+  content: "";
+  position: absolute; top: -1000px; left: 0;
+  width: 3px; height: 3px; background: transparent;
   box-shadow:
-    140px  680px #ffffffaa,  760px  460px #ffffff77, 1020px 240px #d0e6ff,
-    1260px 900px #ffffff55, 1600px 320px #ffffffaa, 460px  100px #ffffff88;
-  animation: animStar 140s linear infinite;
+    90px  640px #ffffffaa,  210px 400px #ffffff77, 420px 100px #d0e6ff,
+    630px  780px #ffffff55, 870px  320px #ffffffaa, 1110px 100px #ffffff88,
+    1350px 640px #ffffffaa, 1590px 880px #d0e6ff;
+  animation: starScroll2 60s linear infinite, twinkle 3s ease-in-out infinite alternate;
+  opacity: .85;
 }
 
+/* Parallax star layer 3 */
 #stars3:after {
-  width: 1px; height: 1px;
+  content: "";
+  position: absolute; top: -1000px; left: 0;
+  width: 1px; height: 1px; background: transparent;
   box-shadow:
-    240px 120px #ffffff55,  560px 980px #ffffff55,  940px  660px #d0e6ff,
-    1220px 780px #ffffff55, 1540px 420px #ffffff55, 300px  500px #d0e6ff;
-  animation: animStar 180s linear infinite;
+    140px 120px #ffffff55,  280px 980px #ffffff55,  470px 660px #d0e6ff,
+    610px  780px #ffffff55,  770px 420px #ffffff55,  900px 500px #d0e6ff,
+    1100px 260px #ffffff55, 1360px 740px #ffffff55, 1530px 540px #d0e6ff;
+  animation: starScroll3 90s linear infinite, twinkle 3.6s ease-in-out infinite alternate;
+  opacity: .7;
 }
 
-@keyframes animStar {
-  from { transform: translateY(0);   }
-  to   { transform: translateY(1000px); }
+/* Faint constellation grid moving slowly */
+#constellation {
+  background:
+    repeating-linear-gradient(75deg, rgba(255,255,255,.06) 0px, rgba(255,255,255,.06) 1px, transparent 1px, transparent 120px),
+    repeating-linear-gradient(-35deg, rgba(255,255,255,.05) 0px, rgba(255,255,255,.05) 1px, transparent 1px, transparent 140px);
+  animation: drift 120s linear infinite;
+  mix-blend-mode: screen;
+  opacity: .07;
+}
+
+/* Occasional shooting stars */
+#stars:before {
+  content: "";
+  position: absolute;
+  top: -20px; left: -100px;
+  width: 120px; height: 2px;
+  background: linear-gradient(90deg, #fff, rgba(255,255,255,0));
+  box-shadow: 0 0 8px 2px #fff;
+  transform: rotate(20deg);
+  animation: shooting 5s linear infinite;
+  opacity: .8;
+}
+
+@keyframes starScroll1 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
+@keyframes starScroll2 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
+@keyframes starScroll3 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
+@keyframes drift { from { background-position: 0 0, 0 0; } to { background-position: 800px 600px, -900px -700px; } }
+@keyframes twinkle { from { filter: drop-shadow(0 0 1px #fff); opacity:.6; } to { filter: drop-shadow(0 0 6px #fff); opacity:1; } }
+@keyframes shooting {
+  0%   { transform: translate(-10vw, 0) rotate(20deg); opacity: 0; }
+  10%  { opacity: .9; }
+  50%  { transform: translate(110vw, 40vh) rotate(20deg); opacity: .6; }
+  100% { transform: translate(140vw, 50vh) rotate(20deg); opacity: 0; }
 }
 
 /* Headlines */
@@ -121,15 +164,14 @@ h2 {
 .stSlider > div > div > div > div { background: #00eaff; }
 </style>
 
-<!-- Starfield layers (non-blocking, under content) -->
-<div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
+<!-- Constellation layers -->
+<div id="stars"></div><div id="stars2"></div><div id="stars3"></div><div id="constellation"></div>
 """, unsafe_allow_html=True)
+
+# ========== MODEL LOADING (unchanged) ==========
 @st.cache_resource
 def load_model():
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
-
-
-  # ========== MODEL LOADING ==========
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -142,8 +184,7 @@ def load_model():
     model.to(DEVICE).eval()
     return model
 
-
-# ========== TRANSFORMS ==========
+# ========== TRANSFORMS (unchanged) ==========
 transform = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor(),
@@ -151,27 +192,22 @@ transform = T.Compose([
                 std=(0.229, 0.224, 0.225)),
 ])
 
-
-# ========== MASKING PIPELINE ==========
+# ========== MASKING PIPELINE (unchanged) ==========
 def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
-    # logits [1, C, H/8, W/8] -> softmax -> upsample to original
     probs = torch.softmax(logits, dim=1)
     up = F.interpolate(probs, size=(orig_h, orig_w),
                        mode="bilinear", align_corners=False)
-    probs_np = up.squeeze(0).cpu().numpy()     # [C, H, W]
+    probs_np = up.squeeze(0).cpu().numpy()
 
-    pred_classes = np.argmax(probs_np, axis=0) # [H, W]
-    max_conf = np.max(probs_np, axis=0)        # [H, W]
+    pred_classes = np.argmax(probs_np, axis=0)
+    max_conf = np.max(probs_np, axis=0)
 
-    # Everything except background (index 0) above threshold = object
     binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
 
-    # Morphological clean-up
     kernel = np.ones((5, 5), np.uint8)
     binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
     binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
 
-    # Keep only large components
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
     min_size = 900
     filtered = np.zeros_like(binary_mask)
@@ -180,14 +216,11 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
             filtered[labels == i] = 255
     binary_mask = filtered
 
-    # Color mask: object on black
     color_mask = np.zeros_like(image_np)
     color_mask[binary_mask == 255] = image_np[binary_mask == 255]
-
     return binary_mask, color_mask
 
-
-# ========== HEADER ==========
+# ========== HEADER (unchanged) ==========
 st.markdown("<h1>🌌 VisionExtract — Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
 st.markdown(
     "<p style='text-align:center;font-size:18px;margin-bottom:8px;'>"
@@ -196,8 +229,7 @@ st.markdown(
     "</p>", unsafe_allow_html=True,
 )
 
-
-# ========== HOW THE TOOL WORKS ==========
+# ========== HOW THE TOOL WORKS (unchanged) ==========
 st.markdown("""
 <div class="glass">
   <h2>⚡ How the Tool Works</h2>
@@ -210,8 +242,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
-# ========== DEMO PREVIEW ==========
+# ========== DEMO PREVIEW (unchanged) ==========
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
@@ -241,8 +272,13 @@ with c3:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
+# ========== YOUR REQUESTED SECOND TITLE (ADDED ONLY THIS LINE) ==========
+st.markdown(
+    "<h1>VisionExtract: Isolation from Images using Image Segmentation</h1>",
+    unsafe_allow_html=True
+)
 
-# ========== UPLOAD + INFERENCE ==========
+# ========== UPLOAD + INFERENCE (unchanged) ==========
 st.markdown("<h2>📤 Upload Your Image</h2>", unsafe_allow_html=True)
 uploaded = st.file_uploader("Choose a JPG/PNG image", type=["jpg", "jpeg", "png"])
 conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
