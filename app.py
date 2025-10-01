@@ -175,56 +175,15 @@ h2 {
 
 <!-- Parallax star layers + grid -->
 <div id="stars"></div><div id="stars2"></div><div id="stars3"></div><div id="constellationGrid"></div>
-
-<!-- Glowing constellations (SVG) -->
-<svg id="constellations" viewBox="0 0 1600 900" preserveAspectRatio="none"
-     style="position:fixed; inset:0; width:100vw; height:100vh;">
-  <defs>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2.2" result="coloredBlur"/>
-      <feMerge>
-        <feMergeNode in="coloredBlur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <g stroke="#9ad2ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
-    <polyline points="140 160, 220 220, 320 180, 420 260, 520 210" />
-    <circle cx="140" cy="160" r="4" fill="#bfe6ff"/>
-    <circle cx="220" cy="220" r="4" fill="#bfe6ff"/>
-    <circle cx="320" cy="180" r="4" fill="#bfe6ff"/>
-    <circle cx="420" cy="260" r="4" fill="#bfe6ff"/>
-    <circle cx="520" cy="210" r="4" fill="#bfe6ff"/>
-  </g>
-  <g stroke="#b3e5ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
-    <polyline points="980 120, 1080 170, 1160 130, 1240 200, 1360 180, 1450 240" />
-    <circle cx="980" cy="120" r="5" fill="#d7f1ff"/>
-    <circle cx="1080" cy="170" r="5" fill="#d7f1ff"/>
-    <circle cx="1160" cy="130" r="5" fill="#d7f1ff"/>
-    <circle cx="1240" cy="200" r="5" fill="#d7f1ff"/>
-    <circle cx="1360" cy="180" r="5" fill="#d7f1ff"/>
-    <circle cx="1450" cy="240" r="5" fill="#d7f1ff"/>
-  </g>
-  <g stroke="#8fd4ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
-    <polyline points="320 620, 420 560, 520 640, 600 590, 700 680" />
-    <circle cx="320" cy="620" r="5" fill="#c7edff"/>
-    <circle cx="420" cy="560" r="5" fill="#c7edff"/>
-    <circle cx="520" cy="640" r="5" fill="#c7edff"/>
-    <circle cx="600" cy="590" r="5" fill="#c7edff"/>
-    <circle cx="700" cy="680" r="5" fill="#c7edff"/>
-  </g>
-</svg>
 """, unsafe_allow_html=True)
 
 # ========== MODEL LOADING (Mask R-CNN on COCO) ==========
 @st.cache_resource
 def load_model():
     st.info(f"Loading model weights from {CHECKPOINT_PATH}...")
-    # Mask R-CNN (COCO 80 classes) – great for all common objects
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(weights="DEFAULT")
     model.to(DEVICE).eval()
 
-    # "Use my checkpoint" messaging as requested
     if os.path.exists(CHECKPOINT_PATH):
         try:
             state = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -236,19 +195,14 @@ def load_model():
         st.warning("⚠️ Checkpoint not found; using pretrained COCO weights instead.")
     return model
 
-# ========== TRANSFORM (for detection models, no normalization needed) ==========
-to_tensor = T.ToTensor()  # converts PIL -> [0,1] tensor (C,H,W)
+# ========== TRANSFORM ==========
+to_tensor = T.ToTensor()
 
-# ========== MASKING PIPELINE USING MASK R-CNN ==========
+# ========== MASKING PIPELINE ==========
 def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thresh: float):
-    """
-    Returns:
-      binary_mask: HxW uint8 (255 = object, 0 = background)
-      color_mask:  HxWx3 uint8 (original colors on black)
-    """
     with torch.no_grad():
         inp = to_tensor(image_pil).to(DEVICE)
-        outputs = model([inp])[0]  # dict: 'boxes','labels','scores','masks'
+        outputs = model([inp])[0]
     h, w = image_np.shape[:2]
 
     if "masks" not in outputs or len(outputs["masks"]) == 0:
@@ -259,12 +213,9 @@ def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thres
     if not np.any(keep):
         return np.zeros((h, w), np.uint8), np.zeros_like(image_np)
 
-    masks = outputs["masks"][keep]          # [N,1,H,W]
-    # Convert to boolean "thing" masks at 0.5 threshold
-    m = (masks.squeeze(1) > 0.5).cpu().numpy()  # [N,H,W] bool
-
-    # Merge all instances into one foreground mask
-    merged = np.any(m, axis=0).astype(np.uint8) * 255  # [H,W] uint8
+    masks = outputs["masks"][keep]
+    m = (masks.squeeze(1) > 0.5).cpu().numpy()
+    merged = np.any(m, axis=0).astype(np.uint8) * 255
     color = np.zeros_like(image_np)
     color[merged == 255] = image_np[merged == 255]
     return merged, color
@@ -316,12 +267,6 @@ with c3:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ========== SECOND TITLE YOU REQUESTED ==========
-st.markdown(
-    "<h1>VisionExtract: Isolation from Images using Image Segmentation</h1>",
-    unsafe_allow_html=True
-)
-
 # ========== UPLOAD + INFERENCE ==========
 st.markdown("<h2>📤 Upload Your Image</h2>", unsafe_allow_html=True)
 uploaded = st.file_uploader("Choose a JPG/PNG image", type=["jpg", "jpeg", "png"])
@@ -367,4 +312,3 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
-
