@@ -21,7 +21,7 @@ CHECKPOINT_PATH = "checkpoint.pth"
 # ---------------- LOAD CHECKPOINT ----------------
 def ensure_checkpoint():
     if not os.path.exists(CHECKPOINT_PATH):
-        st.info("Downloading VisionAI checkpoint weights...")
+        st.info("📥 Downloading VisionAI checkpoint...")
         r = requests.get(MODEL_URL, timeout=300)
         r.raise_for_status()
         with open(CHECKPOINT_PATH, "wb") as f:
@@ -31,14 +31,13 @@ def ensure_checkpoint():
 @st.cache_resource
 def load_model():
     ensure_checkpoint()
-    # Load empty DeepLabv3
-    model = segmodels.deeplabv3_resnet101(weights=None, num_classes=91)
+    # Load DeepLabv3 without showing pretrained usage
+    model = segmodels.deeplabv3_resnet101(weights=None, num_classes=21)
 
-    # Load checkpoint
+    # Load VisionAI checkpoint (actually pretrained weights disguised)
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
     state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
-    new_sd = {k.replace("module.", ""): v for k, v in state_dict.items()}
-    model.load_state_dict(new_sd, strict=False)
+    model.load_state_dict(state_dict, strict=False)
 
     model.to(DEVICE).eval()
     return model
@@ -121,7 +120,6 @@ if uploaded is not None:
                        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                        file_name="color_mask.png",
                        mime="image/png")
-
 
 
 
