@@ -10,84 +10,62 @@ import cv2
 from io import BytesIO
 import requests
 
-# ---------------- STREAMLIT CONFIG ----------------
+# ---------------- STREAMLIT CONFIG (must be first) ----------------
 st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
-# ---------------- COSMIC GALAXY BACKGROUND ----------------
+# ---------------- CUSTOM CSS FOR BEAUTIFUL UI ----------------
 st.markdown("""
     <style>
-        /* Cosmic Galaxy Animated Background */
+        body {
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #ffffff;
+        }
         .stApp {
-            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
-            overflow: hidden;
-            position: relative;
-        }
-        .stars, .stars2, .stars3 {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            background: transparent;
-            top: 0;
-            left: 0;
-            z-index: -1;
-        }
-        .stars {
-            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
-            animation: animStars 60s linear infinite;
-        }
-        .stars2 {
-            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
-            animation: animStars 120s linear infinite;
-            opacity: 0.6;
-        }
-        .stars3 {
-            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
-            animation: animStars 180s linear infinite;
-            opacity: 0.3;
-        }
-        @keyframes animStars {
-            from {background-position: 0 0;}
-            to {background-position: -10000px 5000px;}
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            font-family: 'Segoe UI', sans-serif;
         }
         h1 {
             text-align: center;
             color: #00eaff;
-            font-size: 52px !important;
-            text-shadow: 0px 0px 25px rgba(0,234,255,0.9);
-            margin-bottom: 15px;
+            font-size: 48px !important;
+            text-shadow: 2px 2px 15px rgba(0, 234, 255, 0.8);
         }
-        h2 {
-            color: #ffd166 !important;
-            text-shadow: 0px 0px 12px rgba(255,209,102,0.9);
+        h2, h3 {
+            color: #00ffd5 !important;
+        }
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
         }
         .glass-card {
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 15px;
-            padding: 18px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(12px);
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
         }
         .stDownloadButton button {
-            background: linear-gradient(90deg, #00eaff, #00bcd4);
+            background-color: #00eaff;
             color: black;
-            font-weight: bold;
             border-radius: 10px;
+            font-weight: bold;
             border: none;
             padding: 8px 20px;
         }
         .stDownloadButton button:hover {
-            background: linear-gradient(90deg, #ff9800, #ff5722);
+            background-color: #00bcd4;
             color: white;
         }
+        .stSlider > div > div > div > div {
+            background: #00eaff;
+        }
     </style>
-    <div class="stars"></div>
-    <div class="stars2"></div>
-    <div class="stars3"></div>
 """, unsafe_allow_html=True)
 
 # ---------------- CONFIG ----------------
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
+CONF_THRESH = 0.5
 CHECKPOINT_PATH = "checkpoint.pth"
 
 @st.cache_resource
@@ -149,12 +127,12 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 # ---------------- APP HEADER ----------------
 st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with a moving galaxy background 🚀</p>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with stunning visuals 🚀</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 
-# Load a demo image
+# Load a demo image from URL
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
@@ -235,4 +213,3 @@ if uploaded is not None:
                            file_name="color_mask.png",
                            mime="image/png")
         st.markdown("</div>", unsafe_allow_html=True)
-
