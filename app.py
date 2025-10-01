@@ -18,9 +18,10 @@ CHECKPOINT_PATH = "checkpoint.pth"
 def load_model():
     st.info(f"Loading model weights from {CHECKPOINT_PATH}...") 
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
-# ---------------- LOAD MODEL ----------------
 
     
+    
+    # ---------------- LOAD MODEL ----------------
     # 👀 checkpoint loading
     if os.path.exists(CHECKPOINT_PATH):
         try:
@@ -122,6 +123,7 @@ if uploaded is not None:
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="color_mask.png",
                            mime="image/png")
+
 
 
 
