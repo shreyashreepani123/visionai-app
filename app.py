@@ -17,35 +17,40 @@ st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 st.markdown("""
     <style>
         body {
-            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            background-attachment: fixed;
+            background-size: cover;
             color: #ffffff;
         }
         .stApp {
-            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            background-attachment: fixed;
+            background-size: cover;
             font-family: 'Segoe UI', sans-serif;
         }
         h1 {
             text-align: center;
-            color: #00eaff;
+            color: #ffffff;
             font-size: 48px !important;
-            text-shadow: 2px 2px 15px rgba(0, 234, 255, 0.8);
+            text-shadow: 0px 0px 25px rgba(255, 255, 255, 0.9);
         }
         h2, h3 {
-            color: #00ffd5 !important;
+            color: #fceabb !important;
+            text-shadow: 0px 0px 10px rgba(255, 255, 255, 0.6);
         }
         .block-container {
             padding-top: 2rem;
             padding-bottom: 2rem;
         }
         .glass-card {
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.08);
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(12px);
         }
         .stDownloadButton button {
-            background-color: #00eaff;
+            background-color: #fdbb2d;
             color: black;
             border-radius: 10px;
             font-weight: bold;
@@ -53,11 +58,11 @@ st.markdown("""
             padding: 8px 20px;
         }
         .stDownloadButton button:hover {
-            background-color: #00bcd4;
+            background-color: #ff9800;
             color: white;
         }
         .stSlider > div > div > div > div {
-            background: #00eaff;
+            background: #fdbb2d;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -126,8 +131,8 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 
 # ---------------- APP HEADER ----------------
-st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with stunning visuals 🚀</p>", unsafe_allow_html=True)
+st.markdown("<h1>🌈 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with stunning visuals ✨</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
@@ -150,7 +155,7 @@ demo_col1, demo_col2, demo_col3 = st.columns(3)
 
 with demo_col1:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.image(demo_np, caption="🌌 Demo Input", use_column_width=True)
+    st.image(demo_np, caption="🌈 Demo Input", use_column_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 with demo_col2:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -213,9 +218,6 @@ if uploaded is not None:
                            file_name="color_mask.png",
                            mime="image/png")
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-
 
 
 
