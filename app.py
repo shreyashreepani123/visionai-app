@@ -1,6 +1,6 @@
 # app.py
-# VisionAI – Best Binary Mask Extraction
-# Converts COCO multi-class predictions into clean binary mask (object=white, background=black)
+# VisionAI – Auto Binary Mask Extraction
+# Automatically picks the main object (largest non-background region) and produces a binary mask.
 
 import os
 import io
@@ -22,7 +22,6 @@ CHECKPOINT_PATH = "checkpoint.pth"
 CHECKPOINT_URL  = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 256
-TARGET_CLASS = 1  # COCO class id for 'person' (purple in your mask)
 
 # ---------------- CHECKPOINT ----------------
 def ensure_checkpoint():
@@ -66,11 +65,20 @@ def forward_image(model, pil_img):
     up = F.interpolate(out, size=(H, W), mode="bilinear", align_corners=False)
     return up
 
-def make_binary_mask(logits, target_class=1):
+def auto_binary_mask(logits):
+    """Pick largest non-background class → foreground=white, rest=black"""
     pred = logits.argmax(1).squeeze(0).cpu().numpy().astype(np.uint8)
+
+    # Ignore background (id=0), find largest other class
+    uniq, counts = np.unique(pred, return_counts=True)
+    fg_classes = [(u, c) for u, c in zip(uniq, counts) if u != 0]
+    if not fg_classes:
+        return np.zeros_like(pred, dtype=np.uint8)
+
+    target_class = max(fg_classes, key=lambda x: x[1])[0]
     binary = (pred == target_class).astype(np.uint8) * 255
 
-    # Post-process (remove noise, smooth edges)
+    # Clean mask with morphology
     kernel = np.ones((3,3), np.uint8)
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
@@ -84,9 +92,9 @@ def to_png_bytes(arr):
     return buf.getvalue()
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Best Mask", layout="centered")
-st.title("VisionAI Best Binary Masking")
-st.caption("Extracts target objects as binary mask (white = object, black = background).")
+st.set_page_config(page_title="VisionAI Auto Binary Mask", layout="centered")
+st.title("VisionAI – Best Binary Mask")
+st.caption("Automatically selects the main object class and produces binary mask (white=object, black=background).")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
 
@@ -97,9 +105,9 @@ if uploaded:
     model = load_model()
     logits = forward_image(model, pil)
 
-    binary = make_binary_mask(logits, TARGET_CLASS)
+    binary = auto_binary_mask(logits)
 
-    st.subheader("Binary Mask (object = white, background = black)")
+    st.subheader("Final Binary Mask")
     st.image(binary, clamp=True, channels="GRAY")
 
     st.download_button("⬇ Download Mask (PNG)",
@@ -108,6 +116,7 @@ if uploaded:
         mime="image/png")
 else:
     st.info("Upload an image to start.")
+
 
 
 
