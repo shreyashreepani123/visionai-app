@@ -16,6 +16,48 @@ IMAGE_SIZE = 512
 CONF_THRESH = 0.5
 CHECKPOINT_PATH = "checkpoint.pth"
 
+# ---------------- CUSTOM CSS FOR UI ----------------
+st.markdown("""
+    <style>
+        body {
+            background-color: #0e0e1f;
+        }
+        .stApp {
+            background: linear-gradient(135deg, #ff4ecd, #6c5ce7);
+            color: white;
+        }
+        h1, h2, h3, h4 {
+            color: #ffb6f9 !important;
+            text-align: center;
+            font-family: 'Trebuchet MS', sans-serif;
+        }
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            border-radius: 15px;
+        }
+        .css-1kyxreq {
+            background: #1f1f2e;
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .stDownloadButton button {
+            background-color: #ff4ecd;
+            color: white;
+            border-radius: 8px;
+            font-weight: bold;
+            border: none;
+        }
+        .stDownloadButton button:hover {
+            background-color: #e84393;
+            color: #fff;
+        }
+        .stSlider > div > div > div > div {
+            background: #ff4ecd;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 @st.cache_resource
 def load_model():
     st.info(f"Loading model weights from {CHECKPOINT_PATH}...") 
@@ -76,13 +118,13 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
-st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🌍 VisionExtract: Image Isolation using AI</h1>", unsafe_allow_html=True)
-st.write("Upload an image and get **world-class segmentation masks** powered by VisionAI checkpoints.")
+st.markdown("<h1>🌸 VisionExtract: Beautiful AI Segmentation</h1>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and get <b>stunning segmentation masks</b> powered by VisionAI checkpoints.</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
-st.subheader("✨ Demo Preview")
+st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 
-# Load a demo image from URL
+# Load a demo image
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
@@ -96,15 +138,14 @@ with torch.no_grad():
 
 demo_binary, demo_color = get_clean_masks(logits, orig_h, orig_w, demo_np, conf_thresh=0.5)
 
-# Show demo in 3 columns
 demo_col1, demo_col2, demo_col3 = st.columns(3)
 
 with demo_col1:
-    st.image(demo_np, caption="Demo Input", use_column_width=True)
+    st.image(demo_np, caption="🌸 Original Demo", use_column_width=True)
 with demo_col2:
-    st.image(demo_binary, caption="Demo Binary Mask", use_column_width=True)
+    st.image(demo_binary, caption="🌸 Binary Mask", use_column_width=True)
 with demo_col3:
-    st.image(demo_color, caption="Demo Color Mask", use_column_width=True)
+    st.image(demo_color, caption="🌸 Color Mask", use_column_width=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
