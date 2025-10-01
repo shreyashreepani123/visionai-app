@@ -10,53 +10,63 @@ import cv2
 from io import BytesIO
 import requests
 
+# ---------------- STREAMLIT CONFIG (must be first) ----------------
+st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
+
+# ---------------- CUSTOM CSS FOR BEAUTIFUL UI ----------------
+st.markdown("""
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #ffffff;
+        }
+        .stApp {
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            font-family: 'Segoe UI', sans-serif;
+        }
+        h1 {
+            text-align: center;
+            color: #00eaff;
+            font-size: 48px !important;
+            text-shadow: 2px 2px 15px rgba(0, 234, 255, 0.8);
+        }
+        h2, h3 {
+            color: #00ffd5 !important;
+        }
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+        .stDownloadButton button {
+            background-color: #00eaff;
+            color: black;
+            border-radius: 10px;
+            font-weight: bold;
+            border: none;
+            padding: 8px 20px;
+        }
+        .stDownloadButton button:hover {
+            background-color: #00bcd4;
+            color: white;
+        }
+        .stSlider > div > div > div > div {
+            background: #00eaff;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # ---------------- CONFIG ----------------
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
 CONF_THRESH = 0.5
 CHECKPOINT_PATH = "checkpoint.pth"
-
-# ---------------- CUSTOM CSS FOR UI ----------------
-st.markdown("""
-    <style>
-        body {
-            background-color: #0e0e1f;
-        }
-        .stApp {
-            background: linear-gradient(135deg, #ff4ecd, #6c5ce7);
-            color: white;
-        }
-        h1, h2, h3, h4 {
-            color: #ffb6f9 !important;
-            text-align: center;
-            font-family: 'Trebuchet MS', sans-serif;
-        }
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            border-radius: 15px;
-        }
-        .css-1kyxreq {
-            background: #1f1f2e;
-            border-radius: 12px;
-            padding: 20px;
-        }
-        .stDownloadButton button {
-            background-color: #ff4ecd;
-            color: white;
-            border-radius: 8px;
-            font-weight: bold;
-            border: none;
-        }
-        .stDownloadButton button:hover {
-            background-color: #e84393;
-            color: #fff;
-        }
-        .stSlider > div > div > div > div {
-            background: #ff4ecd;
-        }
-    </style>
-""", unsafe_allow_html=True)
 
 @st.cache_resource
 def load_model():
@@ -115,16 +125,14 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
     return binary_mask, color_mask
 
 
-# ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
-
-st.markdown("<h1>🌸 VisionExtract: Beautiful AI Segmentation</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center; font-size:18px;'>Upload an image and get <b>stunning segmentation masks</b> powered by VisionAI checkpoints.</p>", unsafe_allow_html=True)
+# ---------------- APP HEADER ----------------
+st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with stunning visuals 🚀</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 
-# Load a demo image
+# Load a demo image from URL
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
@@ -141,11 +149,17 @@ demo_binary, demo_color = get_clean_masks(logits, orig_h, orig_w, demo_np, conf_
 demo_col1, demo_col2, demo_col3 = st.columns(3)
 
 with demo_col1:
-    st.image(demo_np, caption="🌸 Original Demo", use_column_width=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.image(demo_np, caption="🌌 Demo Input", use_column_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 with demo_col2:
-    st.image(demo_binary, caption="🌸 Binary Mask", use_column_width=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.image(demo_binary, caption="⚡ Binary Mask", use_column_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 with demo_col3:
-    st.image(demo_color, caption="🌸 Color Mask", use_column_width=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    st.image(demo_color, caption="🎨 Color Mask", use_column_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -171,28 +185,34 @@ if uploaded is not None:
     col1, col2, col3 = st.columns(3)
 
     with col1:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.subheader("📸 Original Image")
         st.image(image_np, use_column_width=True)
         st.download_button("⬇ Download Original",
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="original.png",
                            mime="image/png")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.subheader("⚫ Binary Mask")
         st.image(binary_mask, use_column_width=True)
         st.download_button("⬇ Download Binary Mask",
                            data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
                            file_name="binary_mask.png",
                            mime="image/png")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col3:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         st.subheader("🎨 Color Mask")
         st.image(color_mask, use_column_width=True)
         st.download_button("⬇ Download Color Mask",
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="color_mask.png",
                            mime="image/png")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 
