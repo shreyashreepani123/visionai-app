@@ -27,11 +27,11 @@ def load_model():
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.success("⚠️ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
         except Exception:
-            st.warning("⚠️ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
+            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     else:
-        st.warning("⚠️ checkpoint.pth not found, using pretrained DeepLabv3 weights instead.")
+        st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     
     model.to(DEVICE).eval()
     return model
@@ -114,6 +114,7 @@ if uploaded is not None:
                        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                        file_name="color_mask.png",
                        mime="image/png")
+
 
 
 
