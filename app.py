@@ -8,6 +8,7 @@ import streamlit as st
 import numpy as np
 import cv2
 from io import BytesIO
+import requests
 
 # ---------------- CONFIG ----------------
 DEVICE = torch.device("cpu")
@@ -23,11 +24,12 @@ def load_model():
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-            st.success("⚠ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
+            model.load_state_dict(ckpt, strict=False)
+            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
         except Exception:
-            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.warning("⚠ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
     else:
-        st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
+        st.warning("⚠ Checkpoint not found, using pretrained DeepLabv3 weights instead.")
     
     model.to(DEVICE).eval()
     return model
@@ -74,29 +76,38 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
-# Title
 st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🌍 VisionExtract: Image Isolation using AI</h1>", unsafe_allow_html=True)
 st.write("Upload an image and get **world-class segmentation masks** powered by VisionAI checkpoints.")
 
 # ---------------- DEMO SECTION ----------------
 st.subheader("✨ Demo Preview")
-demo_col1, demo_col2 = st.columns(2)
+
+# Load a demo image from URL
+demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
+demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
+demo_np = np.array(demo_img)
+orig_w, orig_h = demo_img.size
+
+model = load_model()
+with torch.no_grad():
+    inp = transform(demo_img).unsqueeze(0).to(DEVICE)
+    out = model(inp)
+    logits = out["out"]
+
+demo_binary, demo_color = get_clean_masks(logits, orig_h, orig_w, demo_np, conf_thresh=0.5)
+
+# Show demo in 3 columns
+demo_col1, demo_col2, demo_col3 = st.columns(3)
 
 with demo_col1:
-    st.image(
-        "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg",
-        caption="Example Input Image",
-        use_column_width=True
-    )
-
+    st.image(demo_np, caption="Demo Input", use_column_width=True)
 with demo_col2:
-    st.image(
-        "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/messi5.jpg",  
-        caption="Example Segmentation Output",
-        use_column_width=True
-    )
+    st.image(demo_binary, caption="Demo Binary Mask", use_column_width=True)
+with demo_col3:
+    st.image(demo_color, caption="Demo Color Mask", use_column_width=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
+
 
 # ---------------- UPLOAD + INFERENCE ----------------
 uploaded = st.file_uploader("📤 Upload your image (JPG/PNG)", type=["jpg", "jpeg", "png"])
@@ -116,7 +127,6 @@ if uploaded is not None:
 
     binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
 
-    # Side by side layout
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -142,7 +152,6 @@ if uploaded is not None:
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="color_mask.png",
                            mime="image/png")
-
 
 
 
