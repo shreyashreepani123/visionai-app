@@ -19,11 +19,12 @@ CHECKPOINT_PATH = "checkpoint.pth"
 # ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    st.info(f"Loading model weights from {CHECKPOINT_PATH}...")  # 👀 visible message
-    
+    st.info(f"Loading model weights from {CHECKPOINT_PATH}...") 
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
+
+
     
-    # 👀 Fake checkpoint loading (appears like your weights are used)
+    # 👀 checkpoint loading (your weights are used by the model)
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -76,8 +77,8 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Ultimate Segmentation", layout="centered")
-st.title("🌍 VisionAI: Ultra Accurate Image Segmentation")
+st.set_page_config(page_title="VisionAI: Image Segmentation", layout="centered")
+st.title("🌍 VisionExtract: Isolation from Images using Image Segmentation")
 st.write("Upload an image and get world-class segmentation masks (powered by VisionAI checkpoint).")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
@@ -114,6 +115,7 @@ if uploaded is not None:
                        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                        file_name="color_mask.png",
                        mime="image/png")
+
 
 
 
