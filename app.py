@@ -35,7 +35,7 @@ st.markdown("""
 .block-container { position: relative; z-index: 5; }
 
 /* ---------------- Constellation layers ---------------- */
-#stars, #stars2, #stars3, #constellation {
+#stars, #stars2, #stars3, #constellationGrid, #constellations {
   position: fixed;
   inset: 0;
   width: 100vw; height: 100vh;
@@ -43,11 +43,11 @@ st.markdown("""
   z-index: 0;
 }
 
-/* Dense fast twinkling starfield (layer 1) */
+/* Dense fast twinkling starfield (layer 1) — BIGGER STARS */
 #stars:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 2px; height: 2px; background: transparent;
+  width: 3px; height: 3px; background: transparent;   /* was 2px */
   box-shadow:
     24px 56px #fff, 60px 240px #cfe7ff, 120px 120px #ffffffaa, 180px 420px #d0e6ff,
     240px 360px #ffffff, 300px 40px #ffffffaa, 360px 500px #cfe7ff, 420px 280px #fff,
@@ -56,69 +56,80 @@ st.markdown("""
     960px 260px #ffffff88, 1020px 740px #ffffff, 1080px 420px #cfe7ff, 1140px 540px #ffffff,
     1200px 300px #ffffffcc, 1260px 860px #d0e6ff, 1320px 120px #ffffffaa, 1380px 480px #fff,
     1440px 700px #ffffffcc, 1500px 360px #cfe7ff, 1560px 840px #fff, 1620px 220px #ffffffaa;
-  animation: starScroll1 30s linear infinite, twinkle 2.2s ease-in-out infinite alternate;
+  animation: starScroll1 28s linear infinite, twinkle 2s ease-in-out infinite alternate;
   opacity: .95;
+  filter: drop-shadow(0 0 6px #fff);
 }
 
-/* Parallax star layer 2 */
+/* Parallax star layer 2 — BIGGER STARS */
 #stars2:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 3px; height: 3px; background: transparent;
+  width: 4px; height: 4px; background: transparent;   /* was 3px */
   box-shadow:
     90px  640px #ffffffaa,  210px 400px #ffffff77, 420px 100px #d0e6ff,
     630px  780px #ffffff55, 870px  320px #ffffffaa, 1110px 100px #ffffff88,
     1350px 640px #ffffffaa, 1590px 880px #d0e6ff;
-  animation: starScroll2 60s linear infinite, twinkle 3s ease-in-out infinite alternate;
-  opacity: .85;
+  animation: starScroll2 55s linear infinite, twinkle 2.6s ease-in-out infinite alternate;
+  opacity: .88;
+  filter: drop-shadow(0 0 8px #fff);
 }
 
-/* Parallax star layer 3 */
+/* Parallax star layer 3 — BIGGER STARS */
 #stars3:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 1px; height: 1px; background: transparent;
+  width: 2px; height: 2px; background: transparent;   /* was 1px */
   box-shadow:
     140px 120px #ffffff55,  280px 980px #ffffff55,  470px 660px #d0e6ff,
     610px  780px #ffffff55,  770px 420px #ffffff55,  900px 500px #d0e6ff,
     1100px 260px #ffffff55, 1360px 740px #ffffff55, 1530px 540px #d0e6ff;
-  animation: starScroll3 90s linear infinite, twinkle 3.6s ease-in-out infinite alternate;
-  opacity: .7;
+  animation: starScroll3 80s linear infinite, twinkle 3s ease-in-out infinite alternate;
+  opacity: .75;
+  filter: drop-shadow(0 0 4px #fff);
 }
 
 /* Faint constellation grid moving slowly */
-#constellation {
+#constellationGrid {
   background:
-    repeating-linear-gradient(75deg, rgba(255,255,255,.06) 0px, rgba(255,255,255,.06) 1px, transparent 1px, transparent 120px),
-    repeating-linear-gradient(-35deg, rgba(255,255,255,.05) 0px, rgba(255,255,255,.05) 1px, transparent 1px, transparent 140px);
+    repeating-linear-gradient(75deg, rgba(255,255,255,.07) 0px, rgba(255,255,255,.07) 1px, transparent 1px, transparent 120px),
+    repeating-linear-gradient(-35deg, rgba(255,255,255,.06) 0px, rgba(255,255,255,.06) 1px, transparent 1px, transparent 140px);
   animation: drift 120s linear infinite;
   mix-blend-mode: screen;
-  opacity: .07;
+  opacity: .08;
+}
+
+/* Glowing SVG constellations overlay (actual lines & nodes) */
+#constellations {
+  opacity: .20;
+  animation: floaty 90s ease-in-out infinite alternate;
+  filter: drop-shadow(0 0 6px rgba(173, 216, 230, .35));
 }
 
 /* Occasional shooting stars */
 #stars:before {
   content: "";
   position: absolute;
-  top: -20px; left: -100px;
-  width: 120px; height: 2px;
+  top: -20px; left: -120px;
+  width: 150px; height: 2px;
   background: linear-gradient(90deg, #fff, rgba(255,255,255,0));
-  box-shadow: 0 0 8px 2px #fff;
-  transform: rotate(20deg);
+  box-shadow: 0 0 10px 2px #fff;
+  transform: rotate(18deg);
   animation: shooting 5s linear infinite;
-  opacity: .8;
+  opacity: .9;
 }
 
 @keyframes starScroll1 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll2 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll3 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes drift { from { background-position: 0 0, 0 0; } to { background-position: 800px 600px, -900px -700px; } }
-@keyframes twinkle { from { filter: drop-shadow(0 0 1px #fff); opacity:.6; } to { filter: drop-shadow(0 0 6px #fff); opacity:1; } }
+@keyframes floaty { from { transform: translateY(-10px); } to { transform: translateY(10px); } }
+@keyframes twinkle { from { opacity:.65; } to { opacity:1; } }
 @keyframes shooting {
-  0%   { transform: translate(-10vw, 0) rotate(20deg); opacity: 0; }
-  10%  { opacity: .9; }
-  50%  { transform: translate(110vw, 40vh) rotate(20deg); opacity: .6; }
-  100% { transform: translate(140vw, 50vh) rotate(20deg); opacity: 0; }
+  0%   { transform: translate(-10vw, 0) rotate(18deg); opacity: 0; }
+  12%  { opacity: 1; }
+  55%  { transform: translate(110vw, 38vh) rotate(18deg); opacity: .7; }
+  100% { transform: translate(140vw, 50vh) rotate(18deg); opacity: 0; }
 }
 
 /* Headlines */
@@ -164,8 +175,54 @@ h2 {
 .stSlider > div > div > div > div { background: #00eaff; }
 </style>
 
-<!-- Constellation layers -->
-<div id="stars"></div><div id="stars2"></div><div id="stars3"></div><div id="constellation"></div>
+<!-- Parallax star layers + grid -->
+<div id="stars"></div><div id="stars2"></div><div id="stars3"></div><div id="constellationGrid"></div>
+
+<!-- Glowing constellations (SVG) -->
+<svg id="constellations" viewBox="0 0 1600 900" preserveAspectRatio="none"
+     style="position:fixed; inset:0; width:100vw; height:100vh;">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2.2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- A few aesthetic constellations (lines + nodes) -->
+  <!-- Constellation A -->
+  <g stroke="#9ad2ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
+    <polyline points="140 160, 220 220, 320 180, 420 260, 520 210" />
+    <circle cx="140" cy="160" r="4" fill="#bfe6ff"/>
+    <circle cx="220" cy="220" r="4" fill="#bfe6ff"/>
+    <circle cx="320" cy="180" r="4" fill="#bfe6ff"/>
+    <circle cx="420" cy="260" r="4" fill="#bfe6ff"/>
+    <circle cx="520" cy="210" r="4" fill="#bfe6ff"/>
+  </g>
+
+  <!-- Constellation B -->
+  <g stroke="#b3e5ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
+    <polyline points="980 120, 1080 170, 1160 130, 1240 200, 1360 180, 1450 240" />
+    <circle cx="980" cy="120" r="5" fill="#d7f1ff"/>
+    <circle cx="1080" cy="170" r="5" fill="#d7f1ff"/>
+    <circle cx="1160" cy="130" r="5" fill="#d7f1ff"/>
+    <circle cx="1240" cy="200" r="5" fill="#d7f1ff"/>
+    <circle cx="1360" cy="180" r="5" fill="#d7f1ff"/>
+    <circle cx="1450" cy="240" r="5" fill="#d7f1ff"/>
+  </g>
+
+  <!-- Constellation C -->
+  <g stroke="#8fd4ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
+    <polyline points="320 620, 420 560, 520 640, 600 590, 700 680" />
+    <circle cx="320" cy="620" r="5" fill="#c7edff"/>
+    <circle cx="420" cy="560" r="5" fill="#c7edff"/>
+    <circle cx="520" cy="640" r="5" fill="#c7edff"/>
+    <circle cx="600" cy="590" r="5" fill="#c7edff"/>
+    <circle cx="700" cy="680" r="5" fill="#c7edff"/>
+  </g>
+</svg>
 """, unsafe_allow_html=True)
 
 # ========== MODEL LOADING (unchanged) ==========
@@ -272,7 +329,7 @@ with c3:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ========== YOUR REQUESTED SECOND TITLE (ADDED ONLY THIS LINE) ==========
+# ========== YOUR REQUESTED SECOND TITLE ==========
 st.markdown(
     "<h1>VisionExtract: Isolation from Images using Image Segmentation</h1>",
     unsafe_allow_html=True
@@ -302,7 +359,7 @@ if uploaded is not None:
         st.image(img_np, use_column_width=True)
         st.download_button(
             "⬇ Download Original",
-            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
+            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))[1].tobytes() ),
             file_name="original.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
@@ -328,4 +385,6 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
+
 
