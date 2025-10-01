@@ -1,7 +1,12 @@
 torch==2.2.1
 torchvision==0.17.1
-streamlit==1.38.0
-Pillow==10.4.0
-requests==2.32.3
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
+Pillow==10.4.0
+streamlit==1.38.0
+
+# Detectron2 CPU build for Torch 2.2
+-f https://dl.fbaipublicfiles.com/detectron2/wheels/cpu/torch2.2/index.html
+detectron2==0.6
+
+
