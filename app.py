@@ -16,7 +16,7 @@ MODEL_URL = "https://github.com/shreyashreepani123/visionai-app/releases/downloa
 CHECKPOINT_PATH = "checkpoint.pth"
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
-FALLBACK_NUM_CLASSES = 91
+FALLBACK_NUM_CLASSES = 91   # COCO default
 
 # ---------------- UTIL: checkpoint ----------------
 def ensure_checkpoint():
@@ -60,69 +60,31 @@ def load_model():
 # ---------------- TRANSFORMS ----------------
 to_tensor = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    T.ToTensor(),   # no ImageNet normalization (your training used raw tensor)
+    T.ToTensor(),   # no ImageNet normalization
 ])
 
 # ---------------- INFERENCE HELPERS ----------------
-def run_tta_logits(model, pil_img, scales=(0.75, 1.0, 1.25), do_flip=True):
+def run_logits(model, pil_img):
     w0, h0 = pil_img.size
-    acc = None
-    for s in scales:
-        size = (int(IMAGE_SIZE * s), int(IMAGE_SIZE * s))
-        resized = pil_img.resize(size, Image.BILINEAR)
-        x = T.ToTensor()(resized).unsqueeze(0).to(DEVICE)
+    x = to_tensor(pil_img).unsqueeze(0).to(DEVICE)
 
-        with torch.no_grad():
-            logits = model(x)["out"]
-            if do_flip:
-                xf = torch.flip(x, dims=[3])
-                logits_f = model(xf)["out"]
-                logits_f = torch.flip(logits_f, dims=[3])
-                logits += logits_f
-            logits = F.interpolate(logits, size=(IMAGE_SIZE, IMAGE_SIZE),
-                                   mode="bilinear", align_corners=False)
+    with torch.no_grad():
+        logits = model(x)["out"]
+        logits = F.interpolate(logits, size=(h0, w0), mode="bilinear", align_corners=False)
 
-        acc = logits if acc is None else acc + logits
+    return logits.squeeze(0)
 
-    logits_full = F.interpolate(acc, size=(h0, w0), mode="bilinear", align_corners=False)
-    return logits_full.squeeze(0)
+def get_person_mask_from_logits(logits, person_class=1, conf_thresh=0.5):
+    """
+    Extract binary mask for the person class (COCO = class 1).
+    """
+    probs = torch.softmax(logits, dim=0)  # (C,H,W)
+    if person_class >= probs.shape[0]:
+        raise ValueError(f"Person class {person_class} not found in model outputs")
 
-def get_binary_mask_from_logits(logits, conf_thresh=0.6):
-    probs = torch.softmax(logits, dim=0)
-    fg_probs, _ = probs[1:].max(0)  # skip background
-    fg_probs = fg_probs.cpu().numpy()
-    mask = (fg_probs > conf_thresh).astype(np.uint8) * 255
+    person_prob = probs[person_class].cpu().numpy()
+    mask = (person_prob > conf_thresh).astype(np.uint8) * 255
     return mask
-
-def refine_mask_with_grabcut(image_rgb, init_mask):
-    try:
-        h, w = init_mask.shape
-        gc_mask = np.where(init_mask > 0, cv2.GC_PR_FGD, cv2.GC_PR_BGD).astype('uint8')
-
-        kernel = np.ones((5,5), np.uint8)
-        sure_fg = cv2.erode((init_mask>0).astype(np.uint8)*255, kernel, 2)
-        sure_bg = cv2.dilate((init_mask==0).astype(np.uint8)*255, kernel, 2)
-        gc_mask[sure_fg>0] = cv2.GC_FGD
-        gc_mask[sure_bg>0] = cv2.GC_BGD
-
-        bgdModel = np.zeros((1,65), np.float64)
-        fgdModel = np.zeros((1,65), np.float64)
-        cv2.grabCut(image_rgb, gc_mask, None, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_MASK)
-
-        refined = np.where((gc_mask==cv2.GC_FGD) | (gc_mask==cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-        return refined
-    except Exception:
-        return init_mask
-
-def colorize_multiclass(mask, num_classes):
-    h, w = mask.shape
-    out = np.zeros((h, w, 3), dtype=np.uint8)
-    rng = np.random.RandomState(999)
-    palette = rng.randint(0, 256, size=(num_classes, 3), dtype=np.uint8)
-    palette[0] = np.array([0, 0, 0], np.uint8)
-    for cls in np.unique(mask):
-        out[mask == cls] = palette[int(cls) % num_classes]
-    return out
 
 def extract_transparent(orig_rgb, mask):
     rgba = np.dstack([orig_rgb, mask])
@@ -140,55 +102,42 @@ def add_download_button(img_np, filename):
     )
 
 # ---------------- STREAMLIT UI ----------------
-st.set_page_config(page_title="VisionAI Improved Extraction", layout="wide")
-st.title("🖼️ VisionAI Segmentation with Better Extraction")
+st.set_page_config(page_title="VisionAI Person Segmentation", layout="wide")
+st.title("🖼️ VisionAI - Person Segmentation")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
 
 if uploaded is None:
-    st.info("⬆️ Upload an image to start. The app will auto-download your checkpoint.")
+    st.info("⬆️ Upload an image to start.")
 else:
     image_pil = Image.open(uploaded).convert("RGB")
     orig_rgb = np.array(image_pil)
 
     with st.spinner("Running inference..."):
         model, num_classes = load_model()
-        logits = run_tta_logits(model, image_pil)
+        logits = run_logits(model, image_pil)
 
-        # Binary mask (softmax + threshold)
-        binary_mask = get_binary_mask_from_logits(logits, conf_thresh=0.6)
+        # Binary mask for "person" only
+        binary_mask = get_person_mask_from_logits(logits, person_class=1, conf_thresh=0.5)
 
         # Morphological cleanup
         binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, np.ones((7,7),np.uint8))
         binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN,  np.ones((5,5),np.uint8))
 
-        # GrabCut refinement
-        binary_mask = refine_mask_with_grabcut(orig_rgb, binary_mask)
-
-        # Multi-class argmax for visualization
-        pred_classes = torch.argmax(logits, dim=0).cpu().numpy().astype(np.int32)
-        color_multiclass = colorize_multiclass(pred_classes, num_classes)
-
         # Transparent cutout
         cutout = extract_transparent(orig_rgb, binary_mask)
 
     # ---------------- Results ----------------
-    st.subheader("Original")
+    st.subheader("Original Image")
     st.image(orig_rgb, use_column_width=True)
 
-    st.subheader("Binary Mask")
+    st.subheader("Person Binary Mask")
     st.image(binary_mask, use_column_width=True)
-    add_download_button(binary_mask, "binary_mask.png")
-
-    st.subheader("Colored Multi-class Mask")
-    st.image(color_multiclass, use_column_width=True)
-    add_download_button(color_multiclass, "colored_mask.png")
+    add_download_button(binary_mask, "person_mask.png")
 
     st.subheader("Transparent Cutout (alpha)")
     st.image(cutout, use_column_width=True)
-    add_download_button(cutout, "cutout.png")
-
-
+    add_download_button(cutout, "person_cutout.png")
 
 
 
