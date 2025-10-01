@@ -10,57 +10,60 @@ import cv2
 from io import BytesIO
 import requests
 
-# ---------------- STREAMLIT CONFIG (must be first) ----------------
+# ---------------- STREAMLIT CONFIG ----------------
 st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
-# ---------------- CUSTOM CSS WITH ANIMATED STAR BACKGROUND ----------------
+# ---------------- COSMIC GALAXY BACKGROUND ----------------
 st.markdown("""
     <style>
-        /* Star animation background */
-        body {
-            margin: 0;
-            overflow: hidden;
-            color: white;
-        }
+        /* Cosmic Galaxy Animated Background */
         .stApp {
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+            overflow: hidden;
             position: relative;
-            height: 100vh;
-            background: black;
-            color: white;
-            font-family: 'Segoe UI', sans-serif;
         }
-        .stars, .stars:after {
-            content: " ";
+        .stars, .stars2, .stars3 {
             position: absolute;
-            top: -1000px;
-            width: 200%;
-            height: 200%;
-            background: transparent url('https://www.transparenttextures.com/patterns/stardust.png') repeat;
-            animation: animStar 100s linear infinite;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            top: 0;
+            left: 0;
             z-index: -1;
         }
-        .stars:after {
-            animation-delay: 50s;
+        .stars {
+            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
+            animation: animStars 60s linear infinite;
         }
-        @keyframes animStar {
-            from {transform: translateY(0);}
-            to {transform: translateY(1000px);}
+        .stars2 {
+            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
+            animation: animStars 120s linear infinite;
+            opacity: 0.6;
+        }
+        .stars3 {
+            background: url('https://raw.githubusercontent.com/VincentGarreau/particles.js/master/demo/img/stars.png') repeat;
+            animation: animStars 180s linear infinite;
+            opacity: 0.3;
+        }
+        @keyframes animStars {
+            from {background-position: 0 0;}
+            to {background-position: -10000px 5000px;}
         }
         h1 {
             text-align: center;
             color: #00eaff;
-            font-size: 50px !important;
-            text-shadow: 0px 0px 20px rgba(0,234,255,0.9);
-            margin-bottom: 20px;
+            font-size: 52px !important;
+            text-shadow: 0px 0px 25px rgba(0,234,255,0.9);
+            margin-bottom: 15px;
         }
         h2 {
-            color: #ffcc70 !important;
-            text-shadow: 0px 0px 10px rgba(255,204,112,0.8);
+            color: #ffd166 !important;
+            text-shadow: 0px 0px 12px rgba(255,209,102,0.9);
         }
         .glass-card {
             background: rgba(255, 255, 255, 0.08);
             border-radius: 15px;
-            padding: 20px;
+            padding: 18px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(12px);
         }
@@ -78,12 +81,13 @@ st.markdown("""
         }
     </style>
     <div class="stars"></div>
+    <div class="stars2"></div>
+    <div class="stars3"></div>
 """, unsafe_allow_html=True)
 
 # ---------------- CONFIG ----------------
 DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
-CONF_THRESH = 0.5
 CHECKPOINT_PATH = "checkpoint.pth"
 
 @st.cache_resource
@@ -145,12 +149,12 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 # ---------------- APP HEADER ----------------
 st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with a cosmic starry background ✨</p>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with a moving galaxy background 🚀</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 
-# Load a demo image from URL
+# Load a demo image
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
@@ -231,11 +235,6 @@ if uploaded is not None:
                            file_name="color_mask.png",
                            mime="image/png")
         st.markdown("</div>", unsafe_allow_html=True)
-
-
-
-
-
 
 
 
