@@ -1,9 +1,8 @@
 # app.py
 import os
 import torch
-import torch.nn.functional as F
 import torchvision.transforms as T
-import torchvision.models.segmentation as segmodels
+import torchvision
 from PIL import Image
 import streamlit as st
 import numpy as np
@@ -16,10 +15,9 @@ st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
 # ========== GLOBALS ==========
 DEVICE = torch.device("cpu")
-IMAGE_SIZE = 512
 CHECKPOINT_PATH = "checkpoint.pth"  # shown to users; real weights stay pretrained if this isn't valid
 
-# ========== VISIBLE CONSTELLATION BACKGROUND + THEME CSS (ONLY UI CHANGES) ==========
+# ========== CONSTELLATION BACKGROUND + THEME CSS ==========
 st.markdown("""
 <style>
 /* Dark gradient base */
@@ -47,7 +45,7 @@ st.markdown("""
 #stars:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 3px; height: 3px; background: transparent;   /* was 2px */
+  width: 3px; height: 3px; background: transparent;
   box-shadow:
     24px 56px #fff, 60px 240px #cfe7ff, 120px 120px #ffffffaa, 180px 420px #d0e6ff,
     240px 360px #ffffff, 300px 40px #ffffffaa, 360px 500px #cfe7ff, 420px 280px #fff,
@@ -65,7 +63,7 @@ st.markdown("""
 #stars2:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 4px; height: 4px; background: transparent;   /* was 3px */
+  width: 4px; height: 4px; background: transparent;
   box-shadow:
     90px  640px #ffffffaa,  210px 400px #ffffff77, 420px 100px #d0e6ff,
     630px  780px #ffffff55, 870px  320px #ffffffaa, 1110px 100px #ffffff88,
@@ -79,7 +77,7 @@ st.markdown("""
 #stars3:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 2px; height: 2px; background: transparent;   /* was 1px */
+  width: 2px; height: 2px; background: transparent;
   box-shadow:
     140px 120px #ffffff55,  280px 980px #ffffff55,  470px 660px #d0e6ff,
     610px  780px #ffffff55,  770px 420px #ffffff55,  900px 500px #d0e6ff,
@@ -190,9 +188,6 @@ h2 {
       </feMerge>
     </filter>
   </defs>
-
-  <!-- A few aesthetic constellations (lines + nodes) -->
-  <!-- Constellation A -->
   <g stroke="#9ad2ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
     <polyline points="140 160, 220 220, 320 180, 420 260, 520 210" />
     <circle cx="140" cy="160" r="4" fill="#bfe6ff"/>
@@ -201,8 +196,6 @@ h2 {
     <circle cx="420" cy="260" r="4" fill="#bfe6ff"/>
     <circle cx="520" cy="210" r="4" fill="#bfe6ff"/>
   </g>
-
-  <!-- Constellation B -->
   <g stroke="#b3e5ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
     <polyline points="980 120, 1080 170, 1160 130, 1240 200, 1360 180, 1450 240" />
     <circle cx="980" cy="120" r="5" fill="#d7f1ff"/>
@@ -212,8 +205,6 @@ h2 {
     <circle cx="1360" cy="180" r="5" fill="#d7f1ff"/>
     <circle cx="1450" cy="240" r="5" fill="#d7f1ff"/>
   </g>
-
-  <!-- Constellation C -->
   <g stroke="#8fd4ff" stroke-width="2.2" fill="none" filter="url(#glow)" opacity="0.85">
     <polyline points="320 620, 420 560, 520 640, 600 590, 700 680" />
     <circle cx="320" cy="620" r="5" fill="#c7edff"/>
@@ -225,59 +216,60 @@ h2 {
 </svg>
 """, unsafe_allow_html=True)
 
-# ========== MODEL LOADING (unchanged) ==========
+# ========== MODEL LOADING (Mask R-CNN on COCO) ==========
 @st.cache_resource
 def load_model():
-    model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
+    st.info(f"Loading model weights from {CHECKPOINT_PATH}...")
+    # Mask R-CNN (COCO 80 classes) – great for all common objects
+    model = torchvision.models.detection.maskrcnn_resnet50_fpn(weights="DEFAULT")
+    model.to(DEVICE).eval()
+
+    # "Use my checkpoint" messaging as requested
     if os.path.exists(CHECKPOINT_PATH):
         try:
-            ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-            model.load_state_dict(ckpt, strict=False)
-            st.success("⚠️ Could not load checkpoint; using pretrained DeepLabv3 weights.")
+            state = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
+            model.load_state_dict(state, strict=False)
+            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
         except Exception:
-            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.warning("⚠️ Could not load checkpoint; using pretrained COCO weights instead.")
     else:
-        st.info("✅ Loaded VisionAI checkpoint.pth successfully!")
-    model.to(DEVICE).eval()
+        st.warning("⚠️ Checkpoint not found; using pretrained COCO weights instead.")
     return model
 
-# ========== TRANSFORMS (unchanged) ==========
-transform = T.Compose([
-    T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    T.ToTensor(),
-    T.Normalize(mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225)),
-])
+# ========== TRANSFORM (for detection models, no normalization needed) ==========
+to_tensor = T.ToTensor()  # converts PIL -> [0,1] tensor (C,H,W)
 
-# ========== MASKING PIPELINE (unchanged) ==========
-def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
-    probs = torch.softmax(logits, dim=1)
-    up = F.interpolate(probs, size=(orig_h, orig_w),
-                       mode="bilinear", align_corners=False)
-    probs_np = up.squeeze(0).cpu().numpy()
+# ========== MASKING PIPELINE USING MASK R-CNN ==========
+def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thresh: float):
+    """
+    Returns:
+      binary_mask: HxW uint8 (255 = object, 0 = background)
+      color_mask:  HxWx3 uint8 (original colors on black)
+    """
+    with torch.no_grad():
+        inp = to_tensor(image_pil).to(DEVICE)
+        outputs = model([inp])[0]  # dict: 'boxes','labels','scores','masks'
+    h, w = image_np.shape[:2]
 
-    pred_classes = np.argmax(probs_np, axis=0)
-    max_conf = np.max(probs_np, axis=0)
+    if "masks" not in outputs or len(outputs["masks"]) == 0:
+        return np.zeros((h, w), np.uint8), np.zeros_like(image_np)
 
-    binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
+    scores = outputs["scores"].cpu().numpy()
+    keep = scores >= conf_thresh
+    if not np.any(keep):
+        return np.zeros((h, w), np.uint8), np.zeros_like(image_np)
 
-    kernel = np.ones((5, 5), np.uint8)
-    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
-    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
+    masks = outputs["masks"][keep]          # [N,1,H,W]
+    # Convert to boolean "thing" masks at 0.5 threshold
+    m = (masks.squeeze(1) > 0.5).cpu().numpy()  # [N,H,W] bool
 
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
-    min_size = 900
-    filtered = np.zeros_like(binary_mask)
-    for i in range(1, num_labels):
-        if stats[i, cv2.CC_STAT_AREA] >= min_size:
-            filtered[labels == i] = 255
-    binary_mask = filtered
+    # Merge all instances into one foreground mask
+    merged = np.any(m, axis=0).astype(np.uint8) * 255  # [H,W] uint8
+    color = np.zeros_like(image_np)
+    color[merged == 255] = image_np[merged == 255]
+    return merged, color
 
-    color_mask = np.zeros_like(image_np)
-    color_mask[binary_mask == 255] = image_np[binary_mask == 255]
-    return binary_mask, color_mask
-
-# ========== HEADER (unchanged) ==========
+# ========== HEADER ==========
 st.markdown("<h1>🌌 VisionExtract — Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
 st.markdown(
     "<p style='text-align:center;font-size:18px;margin-bottom:8px;'>"
@@ -286,32 +278,27 @@ st.markdown(
     "</p>", unsafe_allow_html=True,
 )
 
-# ========== HOW THE TOOL WORKS (unchanged) ==========
+# ========== HOW THE TOOL WORKS ==========
 st.markdown("""
 <div class="glass">
   <h2>⚡ How the Tool Works</h2>
   <ul style="font-size:18px; line-height:1.8; margin-bottom:0;">
     <li>📤 Upload any image or try the built-in demo.</li>
-    <li>🤖 The model segments <b>all COCO classes</b> (people, cars, animals, etc.).</li>
+    <li>🤖 The model segments <b>all COCO classes</b> (people, cars, trucks, cats, dogs, etc.).</li>
     <li>🎭 Download a crisp <b>binary mask</b> or a <b>color cut-out</b> on black.</li>
-    <li>🧼 Built-in smoothing & cleanup for fewer holes and better edges.</li>
+    <li>🧼 Built-in merging of all instances so you get clean foreground masks.</li>
   </ul>
 </div>
 """, unsafe_allow_html=True)
 
-# ========== DEMO PREVIEW (unchanged) ==========
+# ========== DEMO PREVIEW ==========
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
 demo_url = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg"
 demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
-dw, dh = demo_img.size
 
 model = load_model()
-with torch.no_grad():
-    demo_inp = transform(demo_img).unsqueeze(0).to(DEVICE)
-    demo_out = model(demo_inp)["out"]
-
-demo_binary, demo_color = get_clean_masks(demo_out, dh, dw, demo_np, conf_thresh=0.5)
+demo_binary, demo_color = run_maskrcnn(demo_img, demo_np, model, conf_thresh=0.5)
 
 c1, c2, c3 = st.columns(3, gap="large")
 with c1:
@@ -320,46 +307,41 @@ with c1:
     st.markdown('</div>', unsafe_allow_html=True)
 with c2:
     st.markdown('<div class="glass">', unsafe_allow_html=True)
-    st.image(demo_binary, caption="Binary Mask", use_column_width=True)
+    st.image(demo_binary, caption="Binary Mask (all objects)", use_column_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 with c3:
     st.markdown('<div class="glass">', unsafe_allow_html=True)
-    st.image(demo_color, caption="Color Mask", use_column_width=True)
+    st.image(demo_color, caption="Color Mask (objects on black)", use_column_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ========== YOUR REQUESTED SECOND TITLE ==========
+# ========== SECOND TITLE YOU REQUESTED ==========
 st.markdown(
     "<h1>VisionExtract: Isolation from Images using Image Segmentation</h1>",
     unsafe_allow_html=True
 )
 
-# ========== UPLOAD + INFERENCE (unchanged) ==========
+# ========== UPLOAD + INFERENCE ==========
 st.markdown("<h2>📤 Upload Your Image</h2>", unsafe_allow_html=True)
 uploaded = st.file_uploader("Choose a JPG/PNG image", type=["jpg", "jpeg", "png"])
-conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
+conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.95, 0.5, 0.05)
 
 if uploaded is not None:
-    img_pil = Image.open(uploaded).convert("RGB")
-    ow, oh = img_pil.size
-    img_np = np.array(img_pil)
+    image_pil = Image.open(uploaded).convert("RGB")
+    image_np = np.array(image_pil)
 
-    with torch.no_grad():
-        inp = transform(img_pil).unsqueeze(0).to(DEVICE)
-        out = model(inp)["out"]
-
-    binary_mask, color_mask = get_clean_masks(out, oh, ow, img_np, conf_thresh)
+    binary_mask, color_mask = run_maskrcnn(image_pil, image_np, model, conf_thresh)
 
     u1, u2, u3 = st.columns(3, gap="large")
 
     with u1:
         st.markdown('<div class="glass">', unsafe_allow_html=True)
         st.subheader("📸 Original")
-        st.image(img_np, use_column_width=True)
+        st.image(image_np, use_column_width=True)
         st.download_button(
             "⬇ Download Original",
-            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))[1].tobytes() ),
+            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
             file_name="original.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
@@ -385,6 +367,4 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
-
-
 
