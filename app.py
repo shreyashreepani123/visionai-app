@@ -13,58 +13,71 @@ import requests
 # ---------------- STREAMLIT CONFIG (must be first) ----------------
 st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
-# ---------------- CUSTOM CSS FOR BEAUTIFUL UI ----------------
+# ---------------- CUSTOM CSS WITH ANIMATED STAR BACKGROUND ----------------
 st.markdown("""
     <style>
+        /* Star animation background */
         body {
-            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
-            background-attachment: fixed;
-            background-size: cover;
-            color: #ffffff;
+            margin: 0;
+            overflow: hidden;
+            color: white;
         }
         .stApp {
-            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
-            background-attachment: fixed;
-            background-size: cover;
+            position: relative;
+            height: 100vh;
+            background: black;
+            color: white;
             font-family: 'Segoe UI', sans-serif;
+        }
+        .stars, .stars:after {
+            content: " ";
+            position: absolute;
+            top: -1000px;
+            width: 200%;
+            height: 200%;
+            background: transparent url('https://www.transparenttextures.com/patterns/stardust.png') repeat;
+            animation: animStar 100s linear infinite;
+            z-index: -1;
+        }
+        .stars:after {
+            animation-delay: 50s;
+        }
+        @keyframes animStar {
+            from {transform: translateY(0);}
+            to {transform: translateY(1000px);}
         }
         h1 {
             text-align: center;
-            color: #ffffff;
-            font-size: 48px !important;
-            text-shadow: 0px 0px 25px rgba(255, 255, 255, 0.9);
+            color: #00eaff;
+            font-size: 50px !important;
+            text-shadow: 0px 0px 20px rgba(0,234,255,0.9);
+            margin-bottom: 20px;
         }
-        h2, h3 {
-            color: #fceabb !important;
-            text-shadow: 0px 0px 10px rgba(255, 255, 255, 0.6);
-        }
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
+        h2 {
+            color: #ffcc70 !important;
+            text-shadow: 0px 0px 10px rgba(255,204,112,0.8);
         }
         .glass-card {
             background: rgba(255, 255, 255, 0.08);
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(12px);
         }
         .stDownloadButton button {
-            background-color: #fdbb2d;
+            background: linear-gradient(90deg, #00eaff, #00bcd4);
             color: black;
-            border-radius: 10px;
             font-weight: bold;
+            border-radius: 10px;
             border: none;
             padding: 8px 20px;
         }
         .stDownloadButton button:hover {
-            background-color: #ff9800;
+            background: linear-gradient(90deg, #ff9800, #ff5722);
             color: white;
         }
-        .stSlider > div > div > div > div {
-            background: #fdbb2d;
-        }
     </style>
+    <div class="stars"></div>
 """, unsafe_allow_html=True)
 
 # ---------------- CONFIG ----------------
@@ -131,8 +144,8 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 
 # ---------------- APP HEADER ----------------
-st.markdown("<h1>🌈 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
-st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with stunning visuals ✨</p>", unsafe_allow_html=True)
+st.markdown("<h1>🌌 VisionExtract: Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
+st.write("<p style='text-align:center; font-size:18px;'>Upload an image and experience <b>cutting-edge AI segmentation</b> with a cosmic starry background ✨</p>", unsafe_allow_html=True)
 
 # ---------------- DEMO SECTION ----------------
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
@@ -155,7 +168,7 @@ demo_col1, demo_col2, demo_col3 = st.columns(3)
 
 with demo_col1:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-    st.image(demo_np, caption="🌈 Demo Input", use_column_width=True)
+    st.image(demo_np, caption="🌌 Demo Input", use_column_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 with demo_col2:
     st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -218,8 +231,6 @@ if uploaded is not None:
                            file_name="color_mask.png",
                            mime="image/png")
         st.markdown("</div>", unsafe_allow_html=True)
-
-
 
 
 
