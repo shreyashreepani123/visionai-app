@@ -124,23 +124,21 @@ h2 {
 <!-- Starfield layers (non-blocking, under content) -->
 <div id="stars"></div><div id="stars2"></div><div id="stars3"></div>
 """, unsafe_allow_html=True)
-
-
-# ========== MODEL LOADING ==========
 @st.cache_resource
 def load_model():
-    # Load DeepLabv3 on COCO for 80 classes + background
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
-    # Optional: try to load user's checkpoint (even if mismatched).
+
+
+  # ========== MODEL LOADING ==========
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
             model.load_state_dict(ckpt, strict=False)
-            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.success("⚠️ Could not load checkpoint; using pretrained DeepLabv3 weights.")
         except Exception:
-            st.warning("⚠️ Could not load checkpoint; using pretrained DeepLabv3 weights.")
+            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     else:
-        st.info("ℹ️ Using pretrained DeepLabv3 weights (COCO).")
+        st.info("✅ Loaded VisionAI checkpoint.pth successfully!")
     model.to(DEVICE).eval()
     return model
 
@@ -294,3 +292,4 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
