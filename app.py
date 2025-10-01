@@ -1,49 +1,30 @@
-# app.py
-# VisionAI – Human Segmentation (humans white, background black)
-
 import os
-import requests
-import numpy as np
-from PIL import Image
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 import torchvision.models.segmentation as segmodels
+from PIL import Image
 import streamlit as st
+import numpy as np
+import cv2
+from io import BytesIO
 
 # ---------------- CONFIG ----------------
-CHECKPOINT_PATH = "checkpoint.pth"
-CHECKPOINT_URL  = "https://github.com/shreyashreepani123/visionai-app/releases/download/v1.1/checkpoint.pth"
 DEVICE = torch.device("cpu")
-IMAGE_SIZE = 256
+IMAGE_SIZE = 512  # larger input = more accurate
+CONF_THRESH = 0.5  # default confidence threshold
 
-# ---------------- CHECKPOINT ----------------
-def ensure_checkpoint():
-    if os.path.exists(CHECKPOINT_PATH) and os.path.getsize(CHECKPOINT_PATH) > 0:
-        return
-    st.info("Downloading checkpoint…")
-    r = requests.get(CHECKPOINT_URL, timeout=300)
-    r.raise_for_status()
-    with open(CHECKPOINT_PATH, "wb") as f:
-        f.write(r.content)
 
-def build_model(num_classes=91):  # COCO has 91 classes
-    model = segmodels.deeplabv3_resnet50(weights=None, aux_loss=False)
-    model.classifier[4] = nn.Conv2d(256, num_classes, kernel_size=1)
-    return model
-
+# ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    ensure_checkpoint()
-    ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-    state = ckpt.get("model_state", ckpt)
-    model = build_model(num_classes=91)
-    model.load_state_dict(state, strict=False)
+    # Use pretrained DeepLabv3 for high accuracy
+    model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
     model.to(DEVICE).eval()
     return model
 
-# ---------------- TRANSFORM ----------------
+
+# ---------------- TRANSFORMS ----------------
 transform = T.Compose([
     T.Resize((IMAGE_SIZE, IMAGE_SIZE)),
     T.ToTensor(),
@@ -51,47 +32,82 @@ transform = T.Compose([
                 std=(0.229, 0.224, 0.225)),
 ])
 
-# ---------------- INFERENCE ----------------
-def forward_image(model, pil_img):
-    W, H = pil_img.size
-    x = transform(pil_img).unsqueeze(0).to(DEVICE)
-    with torch.no_grad():
-        out = model(x)["out"]
-    up = F.interpolate(out, size=(H, W), mode="bilinear", align_corners=False)
-    return up
+
+# ---------------- MASK PROCESSING ----------------
+def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
+    # Get probabilities
+    probs = torch.softmax(logits, dim=1)
+    up = F.interpolate(probs, size=(orig_h, orig_w), mode="bilinear", align_corners=False)
+    probs_np = up.squeeze(0).cpu().numpy()
+
+    # Predictions
+    pred_classes = np.argmax(probs_np, axis=0)
+    max_conf = np.max(probs_np, axis=0)
+
+    # Binary mask: all classes (non-background) above threshold
+    binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
+
+    # Morphological cleanup
+    kernel = np.ones((5, 5), np.uint8)
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
+
+    # Connected components cleanup
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+    min_size = 1000  # filter out tiny noise
+    new_mask = np.zeros_like(binary_mask)
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_size:
+            new_mask[labels == i] = 255
+    binary_mask = new_mask
+
+    # Color mask
+    color_mask = np.zeros_like(image_np)
+    color_mask[binary_mask == 255] = image_np[binary_mask == 255]
+
+    return binary_mask, color_mask
+
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Human Segmentation", layout="centered")
-st.title("VisionAI – Human Segmentation")
-st.caption("Humans will appear in white, background in black.")
+st.set_page_config(page_title="VisionAI Ultimate Segmentation", layout="centered")
+st.title("🌍 VisionAI: Ultra Accurate Image Segmentation")
+st.write("Upload an image and get world-class segmentation masks (all classes).")
 
-uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-if uploaded:
-    pil = Image.open(uploaded).convert("RGB")
-    st.image(pil, caption="Uploaded Image", use_column_width=True)
+conf_thresh = st.slider("Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
+
+if uploaded is not None:
+    image_pil = Image.open(uploaded).convert("RGB")
+    orig_w, orig_h = image_pil.size
+    image_np = np.array(image_pil)
+
+    st.subheader("Uploaded Image")
+    st.image(image_np, use_column_width=True)
 
     model = load_model()
-    logits = forward_image(model, pil)
 
-    # Prediction mask
-    pred = logits.argmax(1).squeeze(0).cpu().numpy().astype(np.uint8)
+    with torch.no_grad():
+        inp = transform(image_pil).unsqueeze(0).to(DEVICE)
+        out = model(inp)
+        logits = out["out"]
 
-    # ⚠️ For COCO, 'person' class ID = 1
-    target_class_id = 1
+    binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
 
-    # Create binary mask: 1 for humans, 0 for everything else
-    binary_mask = np.where(pred == target_class_id, 1, 0).astype(np.uint8)
+    st.subheader("Binary Mask (All Objects)")
+    st.image(binary_mask, use_column_width=True)
+    st.download_button("⬇ Download Binary Mask",
+                       data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
+                       file_name="binary_mask.png",
+                       mime="image/png")
 
-    # ✅ Invert mask so humans = white, background = black
-    binary_mask = 1 - binary_mask
+    st.subheader("Color Masking (Objects on Black Background)")
+    st.image(color_mask, use_column_width=True)
+    st.download_button("⬇ Download Color Mask",
+                       data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
+                       file_name="color_mask.png",
+                       mime="image/png")
 
-    # Convert to image
-    mask_img = Image.fromarray((binary_mask * 255).astype(np.uint8))
-    st.image(mask_img, caption="Final Binary Mask", use_column_width=True)
-
-else:
-    st.info("Upload an image to start.")
 
 
 
