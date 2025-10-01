@@ -22,9 +22,7 @@ def load_model():
     st.info(f"Loading model weights from {CHECKPOINT_PATH}...") 
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
 
-
-    
-    # 👀 checkpoint loading (your weights are used by the model)
+    # 👀 checkpoint loading
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
@@ -77,7 +75,7 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI: Image Segmentation", layout="centered")
+st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 st.title("🌍 VisionExtract: Isolation from Images using Image Segmentation")
 st.write("Upload an image and get world-class segmentation masks (powered by VisionAI checkpoint).")
 
@@ -90,9 +88,6 @@ if uploaded is not None:
     orig_w, orig_h = image_pil.size
     image_np = np.array(image_pil)
 
-    st.subheader("Uploaded Image")
-    st.image(image_np, use_column_width=True)
-
     model = load_model()
 
     with torch.no_grad():
@@ -102,22 +97,32 @@ if uploaded is not None:
 
     binary_mask, color_mask = get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh)
 
-    st.subheader("Binary Mask (All Objects)")
-    st.image(binary_mask, use_column_width=True)
-    st.download_button("⬇ Download Binary Mask",
-                       data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
-                       file_name="binary_mask.png",
-                       mime="image/png")
+    # Side by side layout
+    col1, col2, col3 = st.columns(3)
 
-    st.subheader("Color Masking (Objects on Black Background)")
-    st.image(color_mask, use_column_width=True)
-    st.download_button("⬇ Download Color Mask",
-                       data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
-                       file_name="color_mask.png",
-                       mime="image/png")
+    with col1:
+        st.subheader("Original Image")
+        st.image(image_np, use_column_width=True)
+        st.download_button("⬇ Download Original",
+                           data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
+                           file_name="original.png",
+                           mime="image/png")
 
+    with col2:
+        st.subheader("Binary Mask")
+        st.image(binary_mask, use_column_width=True)
+        st.download_button("⬇ Download Binary Mask",
+                           data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
+                           file_name="binary_mask.png",
+                           mime="image/png")
 
-
+    with col3:
+        st.subheader("Color Mask")
+        st.image(color_mask, use_column_width=True)
+        st.download_button("⬇ Download Color Mask",
+                           data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
+                           file_name="color_mask.png",
+                           mime="image/png")
 
 
 
