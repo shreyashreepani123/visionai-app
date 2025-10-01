@@ -1,20 +1,15 @@
 # app.py
-# VisionAI – Auto Binary Mask Extraction
-# Automatically picks the main object (largest non-background region) and produces a binary mask.
+# VisionAI – Human Segmentation (humans white, background black)
 
 import os
-import io
 import requests
 import numpy as np
-import cv2
 from PIL import Image
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 import torchvision.models.segmentation as segmodels
-
 import streamlit as st
 
 # ---------------- CONFIG ----------------
@@ -33,7 +28,7 @@ def ensure_checkpoint():
     with open(CHECKPOINT_PATH, "wb") as f:
         f.write(r.content)
 
-def build_model(num_classes=91):
+def build_model(num_classes=91):  # COCO has 91 classes
     model = segmodels.deeplabv3_resnet50(weights=None, aux_loss=False)
     model.classifier[4] = nn.Conv2d(256, num_classes, kernel_size=1)
     return model
@@ -65,36 +60,10 @@ def forward_image(model, pil_img):
     up = F.interpolate(out, size=(H, W), mode="bilinear", align_corners=False)
     return up
 
-def auto_binary_mask(logits):
-    """Pick largest non-background class → foreground=white, rest=black"""
-    pred = logits.argmax(1).squeeze(0).cpu().numpy().astype(np.uint8)
-
-    # Ignore background (id=0), find largest other class
-    uniq, counts = np.unique(pred, return_counts=True)
-    fg_classes = [(u, c) for u, c in zip(uniq, counts) if u != 0]
-    if not fg_classes:
-        return np.zeros_like(pred, dtype=np.uint8)
-
-    target_class = max(fg_classes, key=lambda x: x[1])[0]
-    binary = (pred == target_class).astype(np.uint8) * 255
-
-    # Clean mask with morphology
-    kernel = np.ones((3,3), np.uint8)
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-
-    return binary
-
-def to_png_bytes(arr):
-    pil = Image.fromarray(arr)
-    buf = io.BytesIO()
-    pil.save(buf, format="PNG")
-    return buf.getvalue()
-
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI Auto Binary Mask", layout="centered")
-st.title("VisionAI – Best Binary Mask")
-st.caption("Automatically selects the main object class and produces binary mask (white=object, black=background).")
+st.set_page_config(page_title="VisionAI Human Segmentation", layout="centered")
+st.title("VisionAI – Human Segmentation")
+st.caption("Humans will appear in white, background in black.")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg","jpeg","png"])
 
@@ -105,17 +74,25 @@ if uploaded:
     model = load_model()
     logits = forward_image(model, pil)
 
-    binary = auto_binary_mask(logits)
+    # Prediction mask
+    pred = logits.argmax(1).squeeze(0).cpu().numpy().astype(np.uint8)
 
-    st.subheader("Final Binary Mask")
-    st.image(binary, clamp=True, channels="GRAY")
+    # ⚠️ For COCO, 'person' class ID = 1
+    target_class_id = 1
 
-    st.download_button("⬇ Download Mask (PNG)",
-        data=to_png_bytes(binary),
-        file_name="binary_mask.png",
-        mime="image/png")
+    # Create binary mask: 1 for humans, 0 for everything else
+    binary_mask = np.where(pred == target_class_id, 1, 0).astype(np.uint8)
+
+    # ✅ Invert mask so humans = white, background = black
+    binary_mask = 1 - binary_mask
+
+    # Convert to image
+    mask_img = Image.fromarray((binary_mask * 255).astype(np.uint8))
+    st.image(mask_img, caption="Final Binary Mask", use_column_width=True)
+
 else:
     st.info("Upload an image to start.")
+
 
 
 
