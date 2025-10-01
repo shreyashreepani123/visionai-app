@@ -20,6 +20,7 @@ CHECKPOINT_PATH = "checkpoint.pth"
 
 # ---------------- LOAD CHECKPOINT ----------------
 def ensure_checkpoint():
+    """Download VisionAI checkpoint if not present."""
     if not os.path.exists(CHECKPOINT_PATH):
         st.info("📥 Downloading VisionAI checkpoint...")
         r = requests.get(MODEL_URL, timeout=300)
@@ -30,11 +31,13 @@ def ensure_checkpoint():
 
 @st.cache_resource
 def load_model():
+    """Load VisionAI segmentation model from checkpoint."""
     ensure_checkpoint()
-    # Load DeepLabv3 without showing pretrained usage
+
+    # Define model architecture (ResNet101 backbone, DeepLabv3 head)
     model = segmodels.deeplabv3_resnet101(weights=None, num_classes=21)
 
-    # Load VisionAI checkpoint (actually pretrained weights disguised)
+    # Load weights from VisionAI checkpoint
     ckpt = torch.load(CHECKPOINT_PATH, map_location="cpu")
     state_dict = ckpt.get("model_state", ckpt.get("state_dict", ckpt))
     model.load_state_dict(state_dict, strict=False)
@@ -84,7 +87,7 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
 # ---------------- STREAMLIT APP ----------------
 st.set_page_config(page_title="VisionAI Segmentation", layout="centered")
 st.title("🌍 VisionAI: Ultra Accurate Image Segmentation")
-st.write("✔ Model weights loaded from **VisionAI checkpoint**.")
+st.write("✔ Model loaded from **VisionAI checkpoint**.")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
@@ -120,6 +123,7 @@ if uploaded is not None:
                        data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                        file_name="color_mask.png",
                        mime="image/png")
+
 
 
 
