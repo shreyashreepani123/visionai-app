@@ -14,44 +14,24 @@ DEVICE = torch.device("cpu")
 IMAGE_SIZE = 512
 CONF_THRESH = 0.5
 CHECKPOINT_PATH = "checkpoint.pth"
-
-# COCO classes (91)
-COCO_CLASSES = [
-    '__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
-    'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant',
-    'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse',
-    'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack',
-    'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis',
-    'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
-    'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass',
-    'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich',
-    'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
-    'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet',
-    'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-    'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock',
-    'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-]
-
-# Assign random colors to each class for visualization
-np.random.seed(42)
-CLASS_COLORS = np.random.randint(0, 255, size=(len(COCO_CLASSES), 3), dtype=np.uint8)
-
-# ---------------- LOAD MODEL ----------------
 @st.cache_resource
 def load_model():
-    st.info(f"Loading model weights from {CHECKPOINT_PATH}...")
+    st.info(f"Loading model weights from {CHECKPOINT_PATH}...") 
     model = segmodels.deeplabv3_resnet101(weights="COCO_WITH_VOC_LABELS_V1")
 
+    
+    
+    # ---------------- LOAD MODEL ----------------
     # 👀 checkpoint loading
     if os.path.exists(CHECKPOINT_PATH):
         try:
             ckpt = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-            st.success("⚠️ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
+            st.success("⚠ Could not load checkpoint, using pretrained DeepLabv3 weights instead.")
         except Exception:
             st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     else:
         st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
-
+    
     model.to(DEVICE).eval()
     return model
 
@@ -74,26 +54,30 @@ def get_clean_masks(logits, orig_h, orig_w, image_np, conf_thresh=0.5):
     pred_classes = np.argmax(probs_np, axis=0)
     max_conf = np.max(probs_np, axis=0)
 
-    # Binary mask for all objects
     binary_mask = ((pred_classes != 0) & (max_conf > conf_thresh)).astype(np.uint8) * 255
 
-    # If no objects found → return black masks
-    if np.sum(binary_mask) == 0:
-        return np.zeros_like(binary_mask), np.zeros_like(image_np)
+    kernel = np.ones((5, 5), np.uint8)
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+    binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
 
-    # Create color mask (each class different color)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+    min_size = 1000
+    new_mask = np.zeros_like(binary_mask)
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_size:
+            new_mask[labels == i] = 255
+    binary_mask = new_mask
+
     color_mask = np.zeros_like(image_np)
-    for class_id in range(1, len(COCO_CLASSES)):  # skip background
-        class_mask = (pred_classes == class_id) & (max_conf > conf_thresh)
-        color_mask[class_mask] = CLASS_COLORS[class_id]
+    color_mask[binary_mask == 255] = image_np[binary_mask == 255]
 
     return binary_mask, color_mask
 
 
 # ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="VisionAI: COCO Segmentation", layout="wide")
-st.title("🌍 VisionExtract: Segmentation on COCO 91 Classes")
-st.write("Upload an image and get segmentation masks across all 91 COCO classes (powered by VisionAI checkpoint).")
+st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
+st.title("🌍 VisionExtract: Isolation from Images using Image Segmentation")
+st.write("Upload an image and get world-class segmentation masks (powered by VisionAI checkpoint).")
 
 uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
@@ -125,7 +109,7 @@ if uploaded is not None:
                            mime="image/png")
 
     with col2:
-        st.subheader("Binary Mask (All Objects)")
+        st.subheader("Binary Mask")
         st.image(binary_mask, use_column_width=True)
         st.download_button("⬇ Download Binary Mask",
                            data=BytesIO(cv2.imencode(".png", binary_mask)[1].tobytes()),
@@ -133,12 +117,13 @@ if uploaded is not None:
                            mime="image/png")
 
     with col3:
-        st.subheader("Color Mask (91 COCO Classes)")
+        st.subheader("Color Mask")
         st.image(color_mask, use_column_width=True)
         st.download_button("⬇ Download Color Mask",
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="color_mask.png",
                            mime="image/png")
+
 
 
 
