@@ -78,28 +78,30 @@ st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 st.markdown("<h1 style='text-align: center; color: #4CAF50;'>🌍 VisionExtract: Image Isolation using AI</h1>", unsafe_allow_html=True)
 st.write("Upload an image and get **world-class segmentation masks** powered by VisionAI checkpoints.")
 
-# Demo section
-demo_col1, demo_col2 = st.columns([1,2])
+# ---------------- DEMO SECTION ----------------
+st.subheader("✨ Demo Preview")
+demo_col1, demo_col2 = st.columns(2)
+
 with demo_col1:
     st.image(
         "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/images/zidane.jpg",
         caption="Example Input Image",
         use_column_width=True
     )
+
 with demo_col2:
     st.image(
-        "https://github.com/ayulockin/segmentation-demos/raw/main/output_mask.png",
+        "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/messi5.jpg",  
         caption="Example Segmentation Output",
         use_column_width=True
     )
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# Upload + threshold
+# ---------------- UPLOAD + INFERENCE ----------------
 uploaded = st.file_uploader("📤 Upload your image (JPG/PNG)", type=["jpg", "jpeg", "png"])
 conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.9, 0.5, 0.05)
 
-# ---------------- MAIN LOGIC ----------------
 if uploaded is not None:
     image_pil = Image.open(uploaded).convert("RGB")
     orig_w, orig_h = image_pil.size
@@ -140,6 +142,8 @@ if uploaded is not None:
                            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
                            file_name="color_mask.png",
                            mime="image/png")
+
+
 
 
 
