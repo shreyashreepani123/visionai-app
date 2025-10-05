@@ -15,25 +15,23 @@ st.set_page_config(page_title="VisionAI: Image Segmentation", layout="wide")
 
 # ========== GLOBALS ==========
 DEVICE = torch.device("cpu")
-CHECKPOINT_PATH = "checkpoint.pth"  # shown to users; real weights stay pretrained if this isn't valid
+CHECKPOINT_PATH = "checkpoint.pth"
 
 # ========== CONSTELLATION BACKGROUND + THEME CSS ==========
 st.markdown("""
 <style>
 /* Dark gradient base */
 .stApp {
-  background: radial-gradient(1200px 600px at 20% -10%, #0e1a2b 0%, transparent 60%) ,
+  background: radial-gradient(1200px 600px at 20% -10%, #0e1a2b 0%, transparent 60%),
               radial-gradient(1200px 600px at 90% -10%, #0a1526 0%, transparent 60%),
               linear-gradient(135deg, #0b1020, #0c1728 45%, #0b1522);
   color: #ffffff;
   font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
 }
-
-/* Keep content above the animations */
 .block-container { position: relative; z-index: 5; }
 
 /* ---------------- Constellation layers ---------------- */
-#stars, #stars2, #stars3, #constellationGrid, #constellations {
+#stars, #stars2, #stars3, #constellationGrid {
   position: fixed;
   inset: 0;
   width: 100vw; height: 100vh;
@@ -41,48 +39,58 @@ st.markdown("""
   z-index: 0;
 }
 
-/* Dense fast twinkling starfield (layer 1) */
+/* Bigger starfield (layer 1) */
 #stars:after {
-  content: "";
-  position: absolute; top: -1000px; left: 0;
-  width: 3px; height: 3px; background: transparent;
-  box-shadow:
-    24px 56px #fff, 60px 240px #cfe7ff, 120px 120px #ffffffaa, 180px 420px #d0e6ff,
-    240px 360px #ffffff, 300px 40px #ffffffaa, 360px 500px #cfe7ff, 420px 280px #fff,
-    480px 660px #ffffffcc, 540px 180px #ffffff88, 600px 760px #d0e6ff, 660px 520px #ffffff,
-    720px 340px #ffffffaa, 780px 880px #cfe7ff, 840px 100px #ffffffcc, 900px 620px #d0e6ff,
-    960px 260px #ffffff88, 1020px 740px #ffffff, 1080px 420px #cfe7ff, 1140px 540px #ffffff,
-    1200px 300px #ffffffcc, 1260px 860px #d0e6ff, 1320px 120px #ffffffaa, 1380px 480px #fff,
-    1440px 700px #ffffffcc, 1500px 360px #cfe7ff, 1560px 840px #fff, 1620px 220px #ffffffaa;
-  animation: starScroll1 28s linear infinite, twinkle 2s ease-in-out infinite alternate;
-  opacity: .95;
-  filter: drop-shadow(0 0 6px #fff);
-}
-
-/* Parallax stars */
-#stars2:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
   width: 4px; height: 4px; background: transparent;
   box-shadow:
-    90px  640px #ffffffaa,  210px 400px #ffffff77, 420px 100px #d0e6ff,
-    630px  780px #ffffff55, 870px  320px #ffffffaa, 1110px 100px #ffffff88,
-    1350px 640px #ffffffaa, 1590px 880px #d0e6ff;
-  animation: starScroll2 55s linear infinite, twinkle 2.6s ease-in-out infinite alternate;
-  opacity: .88;
+    24px 56px #fff, 120px 120px #ffffffcc, 240px 360px #ffffff,
+    420px 280px #fff, 600px 760px #d0e6ff, 780px 880px #cfe7ff,
+    960px 260px #ffffff, 1140px 540px #ffffff, 1320px 120px #fff,
+    1500px 360px #cfe7ff, 1620px 220px #fff;
+  animation: starScroll1 28s linear infinite, twinkle 2s ease-in-out infinite alternate;
+  opacity: .95;
   filter: drop-shadow(0 0 8px #fff);
 }
+
+/* Parallax star layer 2 */
+#stars2:after {
+  content: "";
+  position: absolute; top: -1000px; left: 0;
+  width: 5px; height: 5px; background: transparent;
+  box-shadow:
+    90px 640px #ffffffbb, 420px 100px #d0e6ff,
+    870px 320px #ffffff, 1350px 640px #ffffffaa;
+  animation: starScroll2 55s linear infinite, twinkle 2.6s ease-in-out infinite alternate;
+  opacity: .88;
+  filter: drop-shadow(0 0 10px #fff);
+}
+
+/* Parallax star layer 3 */
 #stars3:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
-  width: 2px; height: 2px; background: transparent;
+  width: 3px; height: 3px; background: transparent;
   box-shadow:
-    140px 120px #ffffff55,  280px 980px #ffffff55,  470px 660px #d0e6ff,
-    610px  780px #ffffff55,  770px 420px #ffffff55,  900px 500px #d0e6ff,
-    1100px 260px #ffffff55, 1360px 740px #ffffff55, 1530px 540px #d0e6ff;
+    280px 980px #ffffff88, 610px 780px #ffffff, 900px 500px #d0e6ff,
+    1360px 740px #ffffff, 1530px 540px #d0e6ff;
   animation: starScroll3 80s linear infinite, twinkle 3s ease-in-out infinite alternate;
   opacity: .75;
-  filter: drop-shadow(0 0 4px #fff);
+  filter: drop-shadow(0 0 6px #fff);
+}
+
+/* Shooting stars */
+#stars:before {
+  content: "";
+  position: absolute;
+  top: -20px; left: -200px;
+  width: 180px; height: 3px;
+  background: linear-gradient(90deg, #fff, rgba(255,255,255,0));
+  box-shadow: 0 0 15px 3px #fff;
+  transform: rotate(18deg);
+  animation: shooting 7s linear infinite;
+  opacity: 0.9;
 }
 
 /* Constellation grid */
@@ -95,23 +103,22 @@ st.markdown("""
   opacity: .08;
 }
 
+/* Animations */
 @keyframes starScroll1 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll2 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll3 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
-@keyframes drift { from { background-position: 0 0, 0 0; } to { background-position: 800px 600px, -900px -700px; } }
+@keyframes drift { from { background-position: 0 0; } to { background-position: 800px 600px; } }
 @keyframes twinkle { from { opacity:.65; } to { opacity:1; } }
+@keyframes shooting {
+  0%   { transform: translate(-20vw, -10vh) rotate(18deg); opacity: 0; }
+  10%  { opacity: 1; }
+  50%  { transform: translate(120vw, 60vh) rotate(18deg); opacity: 0.8; }
+  100% { transform: translate(150vw, 80vh) rotate(18deg); opacity: 0; }
+}
 
 /* Headlines */
-h1 {
-  text-align: center;
-  color: #00eaff;
-  font-size: 54px !important;
-  text-shadow: 0 0 22px rgba(0,234,255,.55);
-}
-h2 {
-  color: #ffd166 !important;
-  text-shadow: 0 0 12px rgba(255,209,102,.45);
-}
+h1 { text-align: center; color: #00eaff; font-size: 54px !important; text-shadow: 0 0 22px rgba(0,234,255,.55); }
+h2 { color: #ffd166 !important; text-shadow: 0 0 12px rgba(255,209,102,.45); }
 
 /* Glass cards */
 .glass {
@@ -132,16 +139,15 @@ def load_model():
     st.info(f"Loading model weights from {CHECKPOINT_PATH}...")
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(weights="DEFAULT")
     model.to(DEVICE).eval()
-
     if os.path.exists(CHECKPOINT_PATH):
         try:
             state = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
             model.load_state_dict(state, strict=False)
-            st.success("⚠️ Could not load checkpoint; using pretrained COCO weights instead.")
+            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
         except Exception:
-            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.warning("⚠️ Could not load checkpoint; using pretrained COCO weights instead.")
     else:
-        st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
+        st.warning("⚠️ Checkpoint not found; using pretrained COCO weights instead.")
     return model
 
 # ========== TRANSFORM ==========
@@ -152,16 +158,12 @@ def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thres
     with torch.no_grad():
         inp = to_tensor(image_pil).to(DEVICE)
         outputs = model([inp])[0]
-    h, w = image_np.shape[:2]
-
     if "masks" not in outputs or len(outputs["masks"]) == 0:
         return np.zeros_like(image_np)
-
     scores = outputs["scores"].cpu().numpy()
     keep = scores >= conf_thresh
     if not np.any(keep):
         return np.zeros_like(image_np)
-
     masks = outputs["masks"][keep]
     m = (masks.squeeze(1) > 0.5).cpu().numpy()
     merged = np.any(m, axis=0).astype(np.uint8) * 255
@@ -171,12 +173,7 @@ def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thres
 
 # ========== HEADER ==========
 st.markdown("<h1>🌌 VisionExtract — Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
-st.markdown(
-    "<p style='text-align:center;font-size:18px;'>"
-    "Upload an image or try the demo. Get high-quality <b>color segmentation</b> results "
-    "for all COCO classes with a clean, beautiful UI ✨"
-    "</p>", unsafe_allow_html=True,
-)
+st.markdown("<p style='text-align:center;font-size:18px;'>Upload an image or try the demo. Get high-quality <b>color segmentation</b> results for all COCO classes with a clean, beautiful UI ✨</p>", unsafe_allow_html=True)
 
 # ========== HOW THE TOOL WORKS ==========
 st.markdown("""
@@ -198,7 +195,7 @@ demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
 
 model = load_model()
-demo_color = run_maskrcnn(demo_img, demo_np, model, conf_thresh=0.9)  # high confidence
+demo_color = run_maskrcnn(demo_img, demo_np, model, conf_thresh=0.9)
 
 c1, c2 = st.columns(2, gap="large")
 with c1:
@@ -220,32 +217,23 @@ conf_thresh = st.slider("🎚 Confidence Threshold", 0.1, 0.95, 0.5, 0.05)
 if uploaded is not None:
     image_pil = Image.open(uploaded).convert("RGB")
     image_np = np.array(image_pil)
-
     color_mask = run_maskrcnn(image_pil, image_np, model, conf_thresh)
 
     u1, u2 = st.columns(2, gap="large")
-
     with u1:
         st.markdown('<div class="glass">', unsafe_allow_html=True)
         st.subheader("📸 Original")
         st.image(image_np, use_column_width=True)
-        st.download_button(
-            "⬇ Download Original",
-            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()),
-            file_name="original.png", mime="image/png"
-        )
+        st.download_button("⬇ Download Original", data=BytesIO(cv2.imencode(".png", cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR))[1].tobytes()), file_name="original.png", mime="image/png")
         st.markdown('</div>', unsafe_allow_html=True)
-
     with u2:
         st.markdown('<div class="glass">', unsafe_allow_html=True)
         st.subheader("🎨 Color Mask")
         st.image(color_mask, use_column_width=True)
-        st.download_button(
-            "⬇ Download Color Mask",
-            data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()),
-            file_name="color_mask.png", mime="image/png"
-        )
+        st.download_button("⬇ Download Color Mask", data=BytesIO(cv2.imencode(".png", cv2.cvtColor(color_mask, cv2.COLOR_RGB2BGR))[1].tobytes()), file_name="color_mask.png", mime="image/png")
         st.markdown('</div>', unsafe_allow_html=True)
+
+
 
 
 
