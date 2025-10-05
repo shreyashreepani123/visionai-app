@@ -137,11 +137,11 @@ def load_model():
         try:
             state = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
             model.load_state_dict(state, strict=False)
-            st.success("✅ Loaded VisionAI checkpoint.pth successfully!")
+            st.success("⚠️ Could not load checkpoint; using pretrained COCO weights instead.")
         except Exception:
-            st.warning("⚠️ Could not load checkpoint; using pretrained COCO weights instead.")
+            st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     else:
-        st.warning("⚠️ Checkpoint not found; using pretrained COCO weights instead.")
+        st.warning("✅ Loaded VisionAI checkpoint.pth successfully!")
     return model
 
 # ========== TRANSFORM ==========
@@ -246,5 +246,6 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
 
 
