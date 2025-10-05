@@ -41,7 +41,7 @@ st.markdown("""
   z-index: 0;
 }
 
-/* Dense fast twinkling starfield (layer 1) — BIGGER STARS */
+/* Dense fast twinkling starfield (layer 1) */
 #stars:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
@@ -59,7 +59,7 @@ st.markdown("""
   filter: drop-shadow(0 0 6px #fff);
 }
 
-/* Parallax star layer 2 — BIGGER STARS */
+/* Parallax stars */
 #stars2:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
@@ -72,8 +72,6 @@ st.markdown("""
   opacity: .88;
   filter: drop-shadow(0 0 8px #fff);
 }
-
-/* Parallax star layer 3 — BIGGER STARS */
 #stars3:after {
   content: "";
   position: absolute; top: -1000px; left: 0;
@@ -87,7 +85,7 @@ st.markdown("""
   filter: drop-shadow(0 0 4px #fff);
 }
 
-/* Faint constellation grid moving slowly */
+/* Constellation grid */
 #constellationGrid {
   background:
     repeating-linear-gradient(75deg, rgba(255,255,255,.07) 0px, rgba(255,255,255,.07) 1px, transparent 1px, transparent 120px),
@@ -97,52 +95,22 @@ st.markdown("""
   opacity: .08;
 }
 
-/* Glowing SVG constellations overlay (actual lines & nodes) */
-#constellations {
-  opacity: .20;
-  animation: floaty 90s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 6px rgba(173, 216, 230, .35));
-}
-
-/* Occasional shooting stars */
-#stars:before {
-  content: "";
-  position: absolute;
-  top: -20px; left: -120px;
-  width: 150px; height: 2px;
-  background: linear-gradient(90deg, #fff, rgba(255,255,255,0));
-  box-shadow: 0 0 10px 2px #fff;
-  transform: rotate(18deg);
-  animation: shooting 5s linear infinite;
-  opacity: .9;
-}
-
 @keyframes starScroll1 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll2 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes starScroll3 { from { transform: translateY(0); } to { transform: translateY(1000px); } }
 @keyframes drift { from { background-position: 0 0, 0 0; } to { background-position: 800px 600px, -900px -700px; } }
-@keyframes floaty { from { transform: translateY(-10px); } to { transform: translateY(10px); } }
 @keyframes twinkle { from { opacity:.65; } to { opacity:1; } }
-@keyframes shooting {
-  0%   { transform: translate(-10vw, 0) rotate(18deg); opacity: 0; }
-  12%  { opacity: 1; }
-  55%  { transform: translate(110vw, 38vh) rotate(18deg); opacity: .7; }
-  100% { transform: translate(140vw, 50vh) rotate(18deg); opacity: 0; }
-}
 
 /* Headlines */
 h1 {
   text-align: center;
   color: #00eaff;
   font-size: 54px !important;
-  letter-spacing: .5px;
   text-shadow: 0 0 22px rgba(0,234,255,.55);
-  margin-top: .5rem;
 }
 h2 {
   color: #ffd166 !important;
   text-shadow: 0 0 12px rgba(255,209,102,.45);
-  margin-top: .75rem;
 }
 
 /* Glass cards */
@@ -150,30 +118,11 @@ h2 {
   background: rgba(255,255,255,.07);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 16px;
-  padding: 18px 18px 14px;
+  padding: 18px;
   box-shadow: 0 10px 40px rgba(0,0,0,.45);
   backdrop-filter: blur(10px);
 }
-
-/* Buttons */
-.stDownloadButton button, .stButton > button {
-  background: linear-gradient(90deg,#00eaff,#00bcd4);
-  color: #001018;
-  border: none;
-  border-radius: 10px;
-  padding: 8px 18px;
-  font-weight: 700;
-}
-.stDownloadButton button:hover, .stButton > button:hover {
-  background: linear-gradient(90deg,#ff9800,#ff5722);
-  color: #fff;
-}
-
-/* Slider accent */
-.stSlider > div > div > div > div { background: #00eaff; }
 </style>
-
-<!-- Parallax star layers + grid -->
 <div id="stars"></div><div id="stars2"></div><div id="stars3"></div><div id="constellationGrid"></div>
 """, unsafe_allow_html=True)
 
@@ -223,15 +172,24 @@ def run_maskrcnn(image_pil: Image.Image, image_np: np.ndarray, model, conf_thres
 # ========== HEADER ==========
 st.markdown("<h1>🌌 VisionExtract — Next-Gen Image Segmentation</h1>", unsafe_allow_html=True)
 st.markdown(
-    "<p style='text-align:center;font-size:18px;margin-bottom:8px;'>"
+    "<p style='text-align:center;font-size:18px;'>"
     "Upload an image or try the demo. Get high-quality <b>color segmentation</b> results "
     "for all COCO classes with a clean, beautiful UI ✨"
     "</p>", unsafe_allow_html=True,
 )
 
-# ========== HOW THE TOOL WORKS (STEPS IMAGE) ==========
-st.markdown("<h2>⚡ How the Tool Works</h2>", unsafe_allow_html=True)
-st.image("c43b6e4d-53eb-4873-b7c3-612b13ed0ecf.jpg", use_column_width=True)
+# ========== HOW THE TOOL WORKS ==========
+st.markdown("""
+<div class="glass">
+  <h2>⚡ How the Tool Works</h2>
+  <ul style="font-size:18px; line-height:1.8; margin-bottom:0;">
+    <li>📤 Upload any image or try the built-in demo.</li>
+    <li>🤖 The model segments <b>all COCO classes</b> (people, cars, trucks, cats, dogs, etc.).</li>
+    <li>🎨 Download a <b>color cut-out</b> on black.</li>
+    <li>🧼 Built-in merging of all instances so you get clean foreground masks.</li>
+  </ul>
+</div>
+""", unsafe_allow_html=True)
 
 # ========== DEMO PREVIEW ==========
 st.markdown("<h2>✨ Demo Preview</h2>", unsafe_allow_html=True)
@@ -240,8 +198,7 @@ demo_img = Image.open(requests.get(demo_url, stream=True).raw).convert("RGB")
 demo_np = np.array(demo_img)
 
 model = load_model()
-# High confidence for demo to ensure perfect segmentation
-demo_color = run_maskrcnn(demo_img, demo_np, model, conf_thresh=0.9)
+demo_color = run_maskrcnn(demo_img, demo_np, model, conf_thresh=0.9)  # high confidence
 
 c1, c2 = st.columns(2, gap="large")
 with c1:
@@ -289,3 +246,5 @@ if uploaded is not None:
             file_name="color_mask.png", mime="image/png"
         )
         st.markdown('</div>', unsafe_allow_html=True)
+
+
